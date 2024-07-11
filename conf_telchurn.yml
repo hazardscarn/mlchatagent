@@ -59,8 +59,8 @@ model:
   histogram_model_location: "models//histogram_telchurn_basemodelv1.pkl"
   catboost_model_location: "models//catboost_telchurn_basemodelv1.pkl"
   dice_model_location: "models//dice_basemodelv1.pkl"
-  model_stats: 'results//tel_churn//model_stats.txt'
-  train_category_levels:  'results//tel_churn//train_categories.json'
+  model_stats: 'models//model_stats.txt'
+  train_category_levels:  'models//train_categories.json'
   model_location: "models//telchurn_xgbmodelv1.pkl"
   predicted_train_data: "results//tel_churn//predicted_train_data.csv"
   predicted_test_data: "results//tel_churn//predicted_test_data.csv"
