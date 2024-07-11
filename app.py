@@ -1,5 +1,6 @@
 from google.cloud import bigquery
 from google.cloud import bigquery_connection_v1 as bq_connection
+from google.cloud import bigquery_storage
 from abc import ABC
 from datetime import datetime
 import google.auth
@@ -25,7 +26,7 @@ import seaborn as sns
 import pandas as pd
 import io
 import base64
-from agent import vizagent,taskscheduler,oracle,VisualizeAgent
+from agent import taskscheduler,oracle,VisualizeAgent
 import numpy as np
 import streamlit as st
 from langchain_core.messages import AIMessage, HumanMessage
@@ -58,7 +59,6 @@ bq_connector = sqlagents.BQConnector(
     region=sql_config['bigquery']['region']
 )
 
-viz_agent = vizagent.VisualizationAgent()
 task_master = taskscheduler.TaskMaster()
 churn_explainer = oracle.ShapOracle()
 xgb_scorer = ModelScorer()
@@ -87,7 +87,21 @@ def remove_sql_and_backticks(input_text):
     return modified_text
 
 def generate_sql(user_question: str):
-    st.markdown("Generating SQL")
+    """
+    Generates the SQL query based on the user question
+    Use this function to create a SQL query to retrive any data user have asked for or to create an answer to user question.
+
+    Parameters
+    ----------
+        user_question : str
+            the user question
+    Returns
+    -------
+        str
+            the result sql query generated
+    """
+    st.markdown("---------------------------------------------")
+    st.info("Generating SQL to answer the user question...")
     embedded_question = embedder.create(user_question)
     AUDIT_TEXT = f"\nUser Question: {user_question}\nUser Database: {USER_DATABASE}"
     process_step = "\n\nGet Exact Match: "
@@ -164,7 +178,8 @@ def execute_sql(user_question: str, sql_generated: str, output_mode: str = 'json
         The result of the SQL query. If output_mode is 'json', the result is a dictionary. If output_mode is 'table', 
         the result is a string formatted as a markdown table.
     """
-    st.markdown(f"Executing SQL in {output_mode} mode...")
+    st.markdown("---------------------------------------------")
+    st.info(f"Executing SQL in {output_mode} mode...")
     sql_generated = sql_generated.replace("\n", " ").replace("\\", "")
     bq_df = bq_connector.retrieve_df(sql_generated)
     if output_mode == 'json':
@@ -172,7 +187,12 @@ def execute_sql(user_question: str, sql_generated: str, output_mode: str = 'json
     else:
         bq_df=pd.DataFrame(bq_df)
         st.dataframe(bq_df)
-        response="Table is displayed above. You shouldn't display anything. Please provide a textual summary of this data."
+
+        if bq_df.shape[0] <20:
+            response = tabulate.tabulate(bq_df, headers='keys', tablefmt='pipe', showindex='never')
+            response += "\n\nAbove table answers user question. Please provide a textual summary of this data to answer users question."
+        else:
+            response = "Data is too large to pass as text or create textual summary. Please explain to the user that the answer to their question is displayed as a table above."
     return response
 
 def subset_churn_contribution_analysis(user_question: str, sql_generated: str):
@@ -207,7 +227,8 @@ def subset_churn_contribution_analysis(user_question: str, sql_generated: str):
         - The output from this is the report. You have to display this report to the user as it is. DO NOT MODIFY THE OUTPUT.                
     
     """
-    st.markdown("Performing subset Churn analysis...")
+    st.markdown("---------------------------------------------")
+    st.info("Performing subset Churn analysis...")
     sql_generated = remove_sql_and_backticks(sql_generated).replace("\n", " ").replace("\\", "")
     df = bq_connector.retrieve_df(sql_generated)
     df2 = xgb_scorer.model_predictor(df.copy())
@@ -246,7 +267,8 @@ def subset_clv_analysis(user_question:str, sql_generated:str,treatment_cost:floa
     -----
         - The output from this is the report. You have to display this report to the user as it is. DO NOT MODIFY THE OUTPUT.                
     """
-    st.markdown("CLV Analysis Tool is running")
+    st.markdown("---------------------------------------------")
+    st.info("CLV Analysis Tool is running")
     # Execute the SQL query
     sql_generated=remove_sql_and_backticks(sql_generated)
     sql_generated=sql_generated.replace("\n", " ")
@@ -313,14 +335,15 @@ def model_stat(user_question:str):
     Note:
     - Unless specified by the user always use test data validation stats for model stats explanation
     """
-
+    st.markdown("---------------------------------------------")
+    st.info("Model Stats Tool is running")
     note= "\nNote:\n- Unless specified by the user always use test data validation stats for model stats explanation"
     with open("results\\tel_churn\\model_stats.txt", 'r') as file:
         model_stats = file.read()
     model_stats+=note
     return model_stats
 
-@st.cache
+
 def generate_visualizations(user_question: str, generated_sql: str):
     """
     Creates different types of visualizations on the subset of data retrieved from the SQL query.
@@ -337,24 +360,20 @@ def generate_visualizations(user_question: str, generated_sql: str):
     - Generates two charts with elements "chart-div" and "chart-div-1".
     """
 
+    st.markdown("---------------------------------------------")
+    st.info("Generating Visualizations...")
     generated_sql = generated_sql.replace("\n", " ").replace("\\", "")
     sql_results_json = bq_connector.retrieve_df(generated_sql).to_json(orient='records')
     
     # Generate unique element IDs
     chart_div_1_id = "chart_div_" + str(uuid.uuid4()).replace("-", "")
-    chart_div_2_id = "chart_div_" + str(uuid.uuid4()).replace("-", "")
 
     # Generate the visualizations using VisualizeAgent
     charts_js = visualize_agent.generate_charts(user_question, generated_sql, sql_results_json)
     if charts_js is not None:
         # Ensure the JavaScript code does not have nested calls
         chart_js_1 = charts_js["chart_div"].replace("chart_div", chart_div_1_id).replace("new google.charts.BarChart", "new google.visualization.BarChart")
-        chart_js_2 = charts_js["chart_div_1"].replace("chart_div", chart_div_2_id).replace("new google.charts.BarChart", "new google.visualization.BarChart")
 
-        print("Chart1")
-        print(chart_js_1)
-        print("Chart2")
-        print(chart_js_2)
         # Create the full HTML content for the first chart
         chart_html_1 = f'''
         <!DOCTYPE html>
@@ -376,189 +395,14 @@ def generate_visualizations(user_question: str, generated_sql: str):
         </html>
         '''
 
-        # # Create the full HTML content for the second chart
-        # chart_html_2 = f'''
-        # <!DOCTYPE html>
-        # <html>
-        # <head>
-        #     <title>Google Chart 2</title>
-        #     <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
-        #     <script type="text/javascript">
-        #         google.charts.load('current', {{packages: ['corechart']}});
-        #         google.charts.setOnLoadCallback(drawChart);
-        #         function drawChart() {{
-        #             {chart_js_2}
-        #         }}
-        #     </script>
-        # </head>
-        # <body>
-        #     <div id="{chart_div_2_id}" style="width: 600px; height: 300px;"></div>
-        # </body>
-        # </html>
-        # '''
-
-
-        # Save the strings to HTML files
-        with open("dynamic_output1.html", "w") as file:
-            file.write(chart_html_1)
-        # with open("dynamic_output2.html", "w") as file:
-        #     file.write(chart_html_2)
-
-        print("HTML content saved to dynamic_output1.html and dynamic_output2.html")
-
         # Use Streamlit's components to embed raw HTML
-        st.subheader("Rendered Visualizations1:")
+        st.markdown("---------------------------------------------")
+        st.markdown("Here is the visualization requested:")
         st.components.v1.html(chart_html_1, height=350)
-        # st.subheader("Rendered Visualizations2:")
-        # st.components.v1.html(chart_html_2, height=350)
-
         return chart_html_1
     else:
         return f"Sorry. Unexpected error due to invalid sql query on data retrieval"
 
-
-# def generate_visualizations(user_question:str, generated_sql:str):
-#     """
-#     Creates different types of visualizations on the subset of data retrieved from the SQL query.
-#     Use this tool if customer asks for a plot or visualization.
-#     The tool generates  google charts code for displaying charts on web application by returning the HTML code for embedding in Streamlit.
-#     Generates two charts with elements "chart-div" and "chart-div-1"
-
-#     Parameters:
-#     - user_question (str): The user's question about the data.
-#     - generated_sql (str): The SQL query corresponding to the user's question.
-
-#     Returns:
-#     - Tuple containing HTML strings for embedding the visualizations.
-#     - Generates two charts with elements "chart-div" and "chart-div-1"
-#     """
-
-#     sql_results_json = bq_connector.retrieve_df(generated_sql).to_json(orient='records')
-
-    
-#     # Generate unique element IDs
-#     chart_div_1_id = "chart_div_" + str(uuid.uuid4()).replace("-", "")
-#     chart_div_2_id = "chart_div_" + str(uuid.uuid4()).replace("-", "")
-
-#     # Generate the visualizations using VisualizeAgent
-#     charts_js = visualize_agent.generate_charts(user_question, generated_sql, sql_results_json)
-
-#     # Embed the JavaScript code in the HTML to render the chart
-#     chart_html_1 = f'''
-#     <div id="{chart_div_1_id}" style="width: 600px; height: 300px;"></div>
-#     <script type="text/javascript">
-#         google.charts.load('current', {{packages: ['corechart']}});
-#         google.charts.setOnLoadCallback(function() {{
-#             var data = new google.visualization.DataTable({charts_js["chart_div"].replace("chart_div", chart_div_1_id)});
-#             var options = {{ title: 'Chart 1', width: 600, height: 300 }};
-#             var chart = new google.visualization.BarChart(document.getElementById('{chart_div_1_id}'));
-#             chart.draw(data, options);
-#         }});
-#     </script>
-#     '''
-#     chart_html_2 = f'''
-#     <div id="{chart_div_2_id}" style="width: 600px; height: 300px;"></div>
-#     <script type="text/javascript">
-#         google.charts.load('current', {{packages: ['corechart']}});
-#         google.charts.setOnLoadCallback(function() {{
-#             var data = new google.visualization.DataTable({charts_js["chart_div_1"].replace("chart_div", chart_div_2_id)});
-#             var options = {{ title: 'Chart 2', width: 600, height: 300 }};
-#             var chart = new google.visualization.BarChart(document.getElementById('{chart_div_2_id}'));
-#             chart.draw(data, options);
-#         }});
-#     </script>
-#     '''
-#     # Save the string to an HTML file
-#     with open("dynamic_output1.html", "w") as file:
-#         file.write(chart_html_1)
-#     with open("dynamic_output2.html", "w") as file:
-#         file.write(chart_html_2)
-#     print(chart_html_1)
-#     # Use Streamlit's components to embed raw HTML
-#     st.subheader("Rendered Visualizations:")
-#     st.components.v1.html(chart_html_1, height=350)
-#     st.components.v1.html(chart_html_2, height=350)
-#     return chart_html_1, chart_html_2
-
-
-def create_visualization(user_question:str, sql_generated:str):
-    """
-    Creates different types of visualizations on the subset of data retrieved from the SQL query.
-    Use this tool if customer asks for a plot or visualization of the data or an output from another tool.
-    Can be used to create scatter, line, bar, histogram, box, violin, and heatmap plots etc on the subset of data.
-    Only pass the appropriate parameters to this tool
-
-    Parameters
-    ----------
-    user_question : str
-        The user's question that the SQL query is intended to answer.
-    sql_generated : str
-        The SQL query to be executed to create the visual.
-
-    Returns
-    -------
-    str
-        A success message if the plot is created successfully, else an error message.
-    """
-
-    print("Visualization Tool is running")
-    # Execute the SQL query
-    sql_generated=remove_sql_and_backticks(sql_generated)
-    sql_generated=sql_generated.replace("\n", " ")
-    sql_generated=sql_generated.replace("\\", "")
-
-    ##Get the subset data from bigquery
-    df = bq_connector.retrieve_df(sql_generated)
-    print(df.columns)
-
-    response=viz_agent.ask_viz(user_question=user_question,feature_type=df.dtypes,features=df.columns.values)
-    
-    
-
-    plot_args = json.loads(response.candidates[0].content.parts[0].text)
-    print(plot_args)
-
-    plot_type=plot_args.get('plot_type')
-    plot_title=plot_args.get('plot_title')
-    x=plot_args.get('X')
-    y=plot_args.get('Y')
-    kwargs=plot_args.get('args', {})
-    print(kwargs)
-    # Check if all values in kwargs are in colss
-    if not set(kwargs.values()).issubset(set(df.columns)):
-        kwargs = {}
-    print(kwargs)
-    # Convert nullable integer columns to float64 or int64
-    for col in df.select_dtypes(include=['Int64']).columns:
-        df[col] = df[col].astype('float64')
-
-    if((plot_type==None)|(x==None)|((y==None) & plot_type!='hist')|(plot_type=='None')|(x=='None')|((y=='None') & plot_type!='hist')):
-        return "Unable to create Plots now. Please try again later with valid inputs."
-    else:
-        plt.figure(figsize=(10, 6))
-        
-        if plot_type == 'scatter':
-            sns.scatterplot(data=df, x=x, y=y, **kwargs)
-        elif plot_type == 'line':
-            sns.lineplot(data=df, x=x, y=y, **kwargs)
-        elif plot_type == 'bar':
-            sns.barplot(data=df, x=x, y=y, **kwargs)
-        elif plot_type == 'hist':
-            sns.histplot(data=df, x=x, **kwargs)
-        elif plot_type == 'box':
-            sns.boxplot(data=df, x=x, y=y, **kwargs)
-        elif plot_type == 'violin':
-            sns.violinplot(data=df, x=x, y=y, **kwargs)
-        elif plot_type == 'heatmap':
-            sns.heatmap(df.pivot_table(index=x, columns=y, **kwargs), **kwargs)
-        else:
-            raise ValueError(f"Unsupported plot type: {plot_type}")
-        
-        plt.title(f"{plot_title}")
-        plt.show()
-
-        return "Plot created successfully"
-    
 
 def question_reformer(user_question:str):
     """
@@ -576,7 +420,8 @@ def question_reformer(user_question:str):
     str
         A string containing the reformulated user questions
     """
-    st.markdown("Question Reformer is running")
+    st.markdown("---------------------------------------------")
+    st.info("Question Reformer is running")
     reformed_question=task_master.ask_taskmaster(user_question)
     #reformed_question=response.candidates[0].content.parts[0].text
     print(f"Reformed Question: {reformed_question}")
@@ -616,7 +461,8 @@ def subset_shap_summary(customer_data_sql_query:str,shap_data_sql_query:str,user
         - The output from this is the report. You have to display this report to the user as it is. DO NOT MODIFY THE OUTPUT.
         - Add a final note after the report of how nd why the recommended actions should be tested with churn adn clv impact analysis.
 """
-    st.markdown("Subset Churn Summary Tool is running")
+    st.markdown("---------------------------------------------")
+    st.info("Subset Churn Summary Tool is running")
     customer_data_sql_query=remove_sql_and_backticks(customer_data_sql_query)
     customer_data_sql_query=customer_data_sql_query.replace("\\", "")
     shap_data_sql_query=remove_sql_and_backticks(shap_data_sql_query)
@@ -624,10 +470,10 @@ def subset_shap_summary(customer_data_sql_query:str,shap_data_sql_query:str,user
 
     ##Validate the query have select * enabled
     customer_data_sql_query_updated=QueryRefiller.check(generated_sql=customer_data_sql_query)
-    st.markdown(f"Updated custommer sql query:{customer_data_sql_query_updated}")
+    print(f"Updated custommer sql query:{customer_data_sql_query_updated}")
 
     shap_data_sql_query_updated=QueryRefiller.check(generated_sql=shap_data_sql_query)
-    st.markdown(f"Updated shap sql query:{shap_data_sql_query_updated}")
+    print(f"Updated shap sql query:{shap_data_sql_query_updated}")
 
 
     ##Get the subset data from bigquery
@@ -656,14 +502,17 @@ def subset_shap_summary(customer_data_sql_query:str,shap_data_sql_query:str,user
     for col in columns_to_drop:
         if col in common_columns:
             common_columns = common_columns.drop(col)
-    #print(1)
 
+    print(f"data shape:{df_data.shape}")
+    print(f"shap data shape:{df_shap_data.shape}")
     # Calculate feature importances
     for feature in common_columns:
         feature_shap_values = df_shap_data[feature]
         feature_importances[feature] = np.mean(np.abs(feature_shap_values))
 
+
     importance_df = pd.DataFrame(list(feature_importances.items()), columns=['Feature', 'Importance'])
+    print(importance_df.head())
     importance_df.sort_values('Importance', ascending=False, inplace=True)
     importance_df['Rank'] = range(1, len(importance_df) + 1)
     importance_ranks = importance_df.set_index('Feature')['Rank'].to_dict()
@@ -680,7 +529,12 @@ def subset_shap_summary(customer_data_sql_query:str,shap_data_sql_query:str,user
         else:
             df['Group'] = df[feature]
 
-        group_avg = df.groupby('Group',observed=True)['SHAP Value'].mean().reset_index()
+        group_avg = df.groupby('Group', observed=True).agg({
+            'SHAP Value': 'mean',
+            feature: 'count'
+        }).reset_index()
+
+        group_avg.rename(columns={feature: 'Count'}, inplace=True)
         group_avg['Adjusted Probability'] = sigmoid(base_value + group_avg['SHAP Value'])
         group_avg['Probability Change (%)'] = (group_avg['Adjusted Probability'] - base_probability) * 100
         group_avg['Feature'] = feature
@@ -689,6 +543,8 @@ def subset_shap_summary(customer_data_sql_query:str,shap_data_sql_query:str,user
         results.append(group_avg)
     
     result_df = pd.concat(results, ignore_index=True)
+    ##Count of groups should be atleast 50 records - If not remove the group
+    result_df = result_df[result_df['Count'] >= 50]
     result_df.sort_values(['Importance Rank', 'Probability Change (%)'], ascending=[True, False], inplace=True)
     result_df=result_df[result_df['Importance Rank']<=10]
     #print(tabulate.tabulate(result_df[['Feature','Group','Probability Change (%)','SHAP Value','Importance Rank']].head(30), headers='keys', tablefmt='pipe', showindex='never'))
@@ -719,7 +575,8 @@ def customer_recommendations(user_question:str, customer_data_query:str,counterf
     str
         A report on recommended actions to reduce the customer churn. You have to display this report to the user.
     """
-    st.markdown("Customer Recommendations Tool is running")
+    st.markdown("---------------------------------------------")
+    st.info("Customer Recommendations Tool is running")
     # Execute the SQL query
     customer_data_query=remove_sql_and_backticks(customer_data_query)
     customer_data_query=customer_data_query.replace("\\", "")
@@ -742,6 +599,113 @@ def customer_recommendations(user_question:str, customer_data_query:str,counterf
                                         counterfactual=counterfactuals.to_json(orient='records'))
     return response
 
+def sample_questions():
+
+    response = """ You can ask me about anything about the process you are looking for.\n
+
+In this scenario, I'm provided with dataset and ML model of a telecom company. I can help answer any question you have based on your role or generic.
+
+Here are some sample questions you can ask me if you are a :-
+
+1. **Retention Manager**:\n
+    a. What are the main reasons for churn for customers with equipment age more than 600 days?\n
+    b. What is the net effect on CLV if we decrease the revenue_per_minute by 10% for customers with churn probability more than 0.5? Assume the cost of treatment is $10 per customer.\n
+    c. What is the average age of customers who have higher churn because of revenue_per_minute?\n
+
+2. **Customer Service Rep**:\n
+    a. What are the recommendations to reduce churn probability for customer with customer_id 3334558?\n
+    b. Who is customer_id 3334558?\n 
+
+3. **Data Analyst**:\n
+    a. What are the top 10 customers with highest churn probability?\n
+    b. What is the churn probability distribution for customers with revenue_per_minute more than 0.5?\n
+    c. Create a vizualization of churn probability distribution for customers with revenue_per_minute more than 0.5.\n
+    d. How many customers with children and aged under 50 have current equipment age more than 600 days?\n
+
+4. **Anyone**:\n
+    a. What are the stats of the model?\n
+    b. What is the AUC and F1 score of the model?\n
+    c. Display the vigintile distribution of model\n
+
+These are some sample questions you can ask me. Feel free to ask me anything you want to know irrepsctive of your role.\n
+I am here to help you talk to the ML model in English and get the best informed answers for your questions.\n
+
+                """
+    return response
+def walkthrough():
+    """
+    Provides a short introduction to all the tools available in the chatbot.
+    Use this function to provide a short introduction to all the tools available in the chatbot.
+    """
+    response = """
+    Hello! I'm MLy 🤖 your friendly AI assistant
+
+    I'm here to help you interact effortlessly with our powerful machine learning models.
+    Just ask me what you need in plain English, and I'll take care of the rest using my wide array of tools. Whether it's data insights, predictions, or recommendations.
+    I'm here to make your experience as smooth and simple as possible.
+
+    Below are some key processes I am trained to help you with:-
+
+     ** Explain the main reasons for churn for a subset of customers of your choice**
+        
+        - Based on the subset you want to analyze, I will go and ask the ML model how each feature contributes to the churn probability of the customers in the subset.
+        - I will then provide you with a excecutive report on the main reasons for churn along with some potential actions you can implement in the short and long term to reduce churn.
+        - For a background on how this is done, I use SHAP analysis on the model predictions. This is a way to make the model explain individual contribution of each features to the prediction.
+          I will then aggregate this information, transform, process and interpret and extract the required infomration you want to know.
+        - Now you need to note that this is not a causal analysis. But with business knowledge and domain expertise you can use this information to make informed decisions.
+
+     ** CLV impact analysis **
+
+        - After churn reason report now you understand main reasons for churn and want to perform a campaign based on the information
+        - But before you do this, how great would it be if you could know the net change in CLV if you apply the treatment on the subset of customers.
+        - I can help you with this. I will calculate the net effect on CLV if you apply the treatment on the subset of customers.
+        - All you have to do tell me:-
+            a. Subset of customers you want to analyze
+            b. The treatment you want to apply on the subset of customers (eg: decrease revenue_per_minute by 10%)
+            c. The cost of the treatment per customer (Every treatment has a cost associated with it. Provide expected cost per customer for a year due to this treatment)
+        - I will then calculate the difference in churn due to treatment applied from the model predictions and derive Discounted Cash Flow method to calculate the Customer Lifetime Value (CLV) for 1 year for the customers in the subset.          
+
+    ** Churn Impact Analysis **
+
+        - This is similar to CLV impact analysis but here I will calculate the average churn prediction before and after the treatment.
+    
+    ** Individual Customer Recommendations **
+
+        - You want to know for a individual customer what are the recommendations to reduce churn probability.
+        - For customers with high churn probabilty I can perform counterfactual analysis with the model and provide you with the recommendations to reduce churn probability for individual customers.
+        - All you have to do is ask for recommendation with the customer ID
+        - How I do this is as below:-
+            a. I will get the customer data for the customer ID you provide
+            b. I will counterfactual analysis performed on action features for the same customer ID
+            c. If you are a customer service rep, I will also provide you with a questionnaire to check with customer on implementing the recommendations.
+        - If you are keen on knowing what counterfatual analysis is, is a method used to estimate the causal effect of a treatment or intervention on an individual or group by comparing the observed outcome with a hypothetical scenario where the treatment did not occur. In simpler terms, it involves imagining what would have happened to the same individual or group if they had not received the treatment or intervention.
+          I would optimize and identify based on the model what treatment is the best for the customer to reduce churn probability.
+
+    ** Model Stats **
+
+        - If you have any questions about model stats and accuracy, I can provide you with the model stats across test data validation and train data validation.
+        - The stats include AUC, F1 Score, Precision, Recall, Lift etc.
+    
+    ** Visualizations **
+
+        - If you want to see the data in a visual format, I can generate different types of visualizations on the subset of data retrieved from the SQL query.
+        - I am still learning this skill but I will try the best I can        
+
+    ** Explorartory Analysis **
+
+        - You want to perform exploratory analysis on the data, I can help you with that.
+        - Just tell me what you want to do and I will create SQL query for the same and provide you with the results.
+
+    ** And many more **
+
+        - There are many other ways you can make use of me. But this is a short introduction to what I can do for you.
+        - For example you can ask what are the top 10 customers with highest churn probability, I can provide you with the list. 
+        - Basically you can consider me as your data scientist assistant who can help you with any data related queries you have.
+          I will take your question, ask around (to data, models, tools, internet) and provide you with the answer you are looking for as best as I can.
+    """
+    return response
+
+
 cot_prompts = """
 You are an intelligent agent named MLi that answers user questions related to telecom churn analysis.
 You have access to multitude of tools like:
@@ -754,6 +718,8 @@ You have access to multitude of tools like:
   - subset_shap_summary: To calculate the SHAP summary of customers from the customer data query and SHAP feature contribution data for same subset
   - customer_recommendations: To generate recommendations to reduce churn probability for individual customers
   - model_stat: To answer any question user have about model stats and accuracy
+  - generate_visualizations: To create different types of visualizations on the subset of data retrieved from the SQL query
+
 
 When you use the following tools, you should display the response exactly as from the tool. No modification:
     - subset_churn_contribution_analysis
@@ -785,6 +751,7 @@ The welcome message should be as below:
     Hello! I'm MLy 🤖 your friendly AI assistant
 
     I'm here to help you interact effortlessly with our powerful machine learning models.
+    In this scenario, I'm provided with dataset and ML model of a telecom company. I can help answer any question you have based on your role or generic.
     Just ask me what you need in plain English, and I'll take care of the rest using my wide array of tools. Whether it's data insights, predictions, or recommendations.
     I'm here to make your experience as smooth and simple as possible.
 
@@ -811,6 +778,44 @@ def role_to_streamlit(role):
     return role
 
 
+
+def add_sidebar_elements():
+
+    
+    
+    # linkedin_url = "https://www.linkedin.com/in/david-babu-15047096/"
+    # #buy_me_a_coffee_url = "https://www.buymeacoffee.com/yourusername"
+
+    # linkedin_icon_html = f"""
+    #     <a href="{linkedin_url}" target="_blank">
+    #         <img src="https://upload.wikimedia.org/wikipedia/commons/e/e9/Linkedin_icon.svg" alt="LinkedIn" style="width: 30px; height: 30px; margin: 10px 0;">
+    #     </a>
+    # """
+
+    linkedin_url = "https://www.linkedin.com/in/david-babu-15047096/"
+    ko_fi_url = "https://ko-fi.com/Q5Q0V3AJA"
+
+    icons_html = f"""
+    <div style="display: flex; align-items: center; justify-content: center; gap: 20px; margin-left: auto; margin-right: auto; max-width: fit-content;">
+        <a href="{ko_fi_url}" target="_blank">
+            <img height="36" style="border:0px;height:36px;" src="https://storage.ko-fi.com/cdn/kofi2.png?v=3" border="0" alt="Buy Me a Coffee at ko-fi.com" />
+        </a>
+        <a href="{linkedin_url}" target="_blank">
+            <img src="https://upload.wikimedia.org/wikipedia/commons/e/e9/Linkedin_icon.svg" alt="LinkedIn" style="width: 30px; height: 30px;">
+        </a>
+    </div>
+    """
+
+    with st.sidebar:
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)  # Adding space at the top if needed
+        st.markdown(icons_html, unsafe_allow_html=True)
+
+        
+
 # Function to display chat history
 def display_chat_history(chat_history):
     for message in chat_history:
@@ -824,7 +829,19 @@ def display_chat_history(chat_history):
                     with st.chat_message(role):
                         st.write(part.text)
 
-st.title("Telecom Churn Analysis Chatbot")
+st.markdown("<h2 style='text-align: center;'>Meet MLi 🤖: Your ML Model Whisperer</h2>", unsafe_allow_html=True)
+st.markdown("<br>", unsafe_allow_html=True)
+st.markdown("<br>", unsafe_allow_html=True)
+st.markdown("<br>", unsafe_allow_html=True)
+
+st.sidebar.markdown("<br>", unsafe_allow_html=True)
+st.sidebar.markdown("<br>", unsafe_allow_html=True)
+with st.sidebar.expander("Click here for a short introduction to know what I can do for you if you are new to me"):
+    st.markdown(walkthrough())
+st.sidebar.markdown("<br>", unsafe_allow_html=True)
+with st.sidebar.expander("Here are some sample questions if you want to know what you can ask me"):
+    st.markdown(sample_questions())
+add_sidebar_elements()
 
 # Initialize chat session in session state
 if "chat" not in st.session_state:
@@ -841,8 +858,9 @@ if prompt := st.chat_input("I possess a well of knowledge. What would you like t
     # Display user's last message
     st.chat_message("user").markdown(prompt)
     
-    # Send user entry to Gemini and get the response
-    response = st.session_state.chat.send_message(prompt)
+    with st.spinner("Processing..."):
+        # Send user entry to Gemini and get the response
+        response = st.session_state.chat.send_message(prompt)
     
     # Add model's response to chat history and display it
     with st.chat_message("assistant"):
@@ -864,17 +882,3 @@ if prompt := st.chat_input("I possess a well of knowledge. What would you like t
 #             st.write(message)
 
 
-# response.candidates[0].content.parts[0].text
-
-
-# user_query = st.chat_input("Type your question here...")
-# if user_query is not None and user_query != "":
-#     st.session_state.chat_history.append(HumanMessage(content=user_query))
-
-#     with st.chat_message("Human"):
-#         st.markdown(user_query)
-
-#     with st.chat_message("AI"):
-#         response = st.write_stream(get_response(user_query, st.session_state.chat_history))
-
-#     st.session_state.chat_history.append(AIMessage(content=response))

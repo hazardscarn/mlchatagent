@@ -326,6 +326,9 @@ class ValidateSQLAgent(Agent, ABC):
             - Use the columns from the "SELECT" statement while framing "GROUP BY" block.
             - Always the table should be refered as schema.table_name.
             - Use all the non-aggregated columns from the "SELECT" statement while framing "GROUP BY" block.
+            - Use counterfactual table only for individual customer recommendations and actions.
+            - Never use counterfactuals for churn reasoning for a subset. Doing so will result in fat errors
+
 
         **NOTE:  
         - It is allowed when query is attempting to create a new column which already exists in the table. DO NOT consider this as an error.BIGQUERY will add new columns with _1,_2 etc.
@@ -633,8 +636,8 @@ class QueryRefiller(Agent, ABC):
 
         context_prompt = f"""
         Your task is to check if the SQL query contains "SELECT *" and modify it if necessary:
-        - If the query does not have "SELECT *", modify it to include "SELECT *".
-        - If the query already has "SELECT *", return the query as is.
+        - If the query does not have "SELECT *" or "select alias.*", modify it to include "SELECT *".
+        - If the query already has "SELECT *" or "select alias.*", return the query as is.
         - Include any modified or new columns in the query.
         - Ensure the query remains valid SQL.
 
@@ -651,6 +654,10 @@ class QueryRefiller(Agent, ABC):
         Example 3 - When "SELECT *" is already there along with a modified column:
         Original query: SELECT *,(revenue_per_minute-0.1) as revenue_per_minute FROM eco-sector-422622-b5.telecom_churn.customer_data
         Reframed query: SELECT *,(revenue_per_minute-0.1) as revenue_per_minute FROM eco-sector-422622-b5.telecom_churn.customer_data
+
+        Example 4 - When "SELECT alias.*" is already there:
+        Original query: SELECT t1.* FROM mlchatagent-429005.telecom_churn.customer_shap_data t1 JOIN mlchatagent-429005.telecom_churn.customer_data t2 ON t1.customerid = t2.customerid WHERE t2.ageinhh1 < 20
+        Reframed query: SELECT t1.* FROM mlchatagent-429005.telecom_churn.customer_shap_data t1 JOIN mlchatagent-429005.telecom_churn.customer_data t2 ON t1.customerid = t2.customerid WHERE t2.ageinhh1 < 20
 
         Here is the SQL generated:
         {generated_sql}

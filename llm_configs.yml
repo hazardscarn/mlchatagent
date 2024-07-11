@@ -38,7 +38,7 @@ build_sql:
       - Then, create another subquery to calculate the min and max values for each bucket.
       - Finally, join these subqueries and format the bucket ranges as strings (e.g., CONCAT('$', FORMAT('%f', min_value), ' - $', FORMAT('%f', max_value))).
     - Use window functions to calculate running totals, averages, and other aggregations.
-    - Use counterfactual table only for individual customer reccomendations.                  
+    - Use counterfactual table only for individual customer reccomendations. Never use it for any other purpose                  
 
   max_output_tokens : 2048
   temperature: 0

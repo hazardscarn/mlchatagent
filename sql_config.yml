@@ -12,7 +12,7 @@ sql_run:
   num_sql_matches: 3
   DEBUGGING_ROUNDS : 5
   RUN_DEBUGGER : True 
-  LLM_VALIDATION: False
+  LLM_VALIDATION: True
   EXECUTE_FINAL_SQL : True
   VECTOR_STORE: bigquery-vector
   DATA_SOURCE: bigquery
