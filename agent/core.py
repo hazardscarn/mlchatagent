@@ -22,8 +22,38 @@ import google.generativeai as genai
 import google.ai.generativelanguage as glm
 import os
 from dotenv import load_dotenv
-load_dotenv()
-GOOGLE_API_KEY = os.environ['GOOGLE_API_KEY']
+from google.cloud import secretmanager
+
+#load_dotenv()
+
+
+def access_secret_version(project_id, secret_id, version_id="latest"):
+    """
+    Access the payload for the given secret version if one exists. The version
+    can be a version number as a string (e.g. "5") or an alias (e.g. "latest").
+    """
+    # Create the Secret Manager client.
+    client = secretmanager.SecretManagerServiceClient()
+
+    # Build the resource name of the secret version.
+    name = f"projects/{project_id}/secrets/{secret_id}/versions/{version_id}"
+
+    # Access the secret version.
+    response = client.access_secret_version(name=name)
+
+    # Return the secret payload.
+    # WARNING: Do not print the secret in production.
+    payload = response.payload.data.decode("UTF-8")
+    return payload
+
+
+#GOOGLE_API_KEY = os.environ['GOOGLE_API_KEY']
+project_id = "mlchatagent-429005"
+secret_id = "GOOGLE_API_KEY"
+
+# Access the secret
+GOOGLE_API_KEY = access_secret_version(project_id, secret_id)
+
 genai.configure(api_key=GOOGLE_API_KEY)
 
 class Agent(ABC):
