@@ -371,7 +371,7 @@ def model_stat(user_question:str):
     st.markdown("---------------------------------------------")
     st.info("Model Stats Tool is running")
     note= "\nNote:\n- Unless specified by the user always use test data validation stats for model stats explanation"
-    with open("results\\tel_churn\\model_stats.txt", 'r') as file:
+    with open(model_config['model']['model_stats'], 'r') as file:
         model_stats = file.read()
     model_stats+=note
     return model_stats
