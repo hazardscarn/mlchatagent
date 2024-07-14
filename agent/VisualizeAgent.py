@@ -130,7 +130,8 @@ class VisualizeAgent(Agent, ABC):
         Note:
             -If generated sql query have select * without a GROUP BY condition, suggestion-1 and suggestion-1 should be None.
             -Faliure to do so will create Fatal errors
-
+            -All series on a given axis must be of the same data type. For example, if you have a bar chart with a series of numbers and a series of strings, the chart will not render correctly.
+            -Convert data types as necessary to ensure that all series on a given axis are of the same data type.
         Output format:
         Respond using a valid JSON format with two elements chart_1 and chart_2 as below
 

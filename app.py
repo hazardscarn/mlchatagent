@@ -119,6 +119,12 @@ def remove_sql_and_backticks(input_text):
     modified_text = re.sub(r'\\\\', '', modified_text)
     return modified_text
 
+def normalize_string(s):
+    s = s.lower()
+    s = re.sub(r'\s+', ' ', s)  # Replace multiple spaces with a single space
+    s = re.sub(r'[^a-zA-Z0-9\s]', '', s)  # Remove all non-alphanumeric characters except spaces
+    return s.strip()
+
 def generate_sql(user_question: str):
     """
     Generates the SQL query based on the user question
@@ -135,56 +141,98 @@ def generate_sql(user_question: str):
     """
     st.markdown("---------------------------------------------")
     st.info("Generating SQL to answer the user question...")
-    embedded_question = embedder.create(user_question)
-    AUDIT_TEXT = f"\nUser Question: {user_question}\nUser Database: {USER_DATABASE}"
-    process_step = "\n\nGet Exact Match: "
+    intermediate_steps = []
+    normalized_question = normalize_string(user_question)
+    try:
+        embedded_question = embedder.create(user_question)
+        AUDIT_TEXT = f"\nUser Question: {user_question}\nUser Database: {USER_DATABASE}"
+        process_step = "\n\nGet Exact Match: "
 
-    if KGQ_ENABLED:
-        exact_sql_history = bq_connector.getExactMatches(user_question)
-    else:
-        exact_sql_history = None
-
-    if exact_sql_history is not None:
-        final_sql = exact_sql_history
-        invalid_response = False
-        AUDIT_TEXT += "\nExact match found! Retrieving SQL query from cache."
-    else:
-        AUDIT_TEXT += process_step + "\nNo exact match found, retrieving schema and known good queries..."
-        process_step = "\n\nGet Similar Match: "
-        similar_sql = bq_connector.getSimilarMatches('example', USER_DATABASE, embedded_question, num_sql_matches, example_similarity_threshold) if KGQ_ENABLED else "No similar SQLs provided..."
-        process_step = "\n\nGet Table and Column Schema: "
-        table_matches = bq_connector.getSimilarMatches('table', USER_DATABASE, embedded_question, num_table_matches, table_similarity_threshold)
-        column_matches = bq_connector.getSimilarMatches('column', USER_DATABASE, embedded_question, num_column_matches, column_similarity_threshold)
-        AUDIT_TEXT += process_step + f"\nRetrieved Tables: \n{table_matches}\n\nRetrieved Columns: \n{column_matches}\n\nRetrieved Known Good Queries: \n{similar_sql}"
-
-        if table_matches or column_matches:
-            process_step = "\n\nBuild SQL: "
-            generated_sql = SQLBuilder.build_sql(DATA_SOURCE, user_question, table_matches, column_matches, similar_sql)
-            final_sql = generated_sql
-            AUDIT_TEXT += process_step + f"\nGenerated SQL: {generated_sql}"
-
-            if 'unrelated_answer' in generated_sql:
-                invalid_response = True
-                AUDIT_TEXT += "\nInvalid Response: "
-            else:
-                invalid_response = False
-                if RUN_DEBUGGER:
-                    generated_sql, invalid_response, AUDIT_TEXT = SQLDebugger.start_debugger(
-                        DATA_SOURCE, generated_sql, user_question, SQLValidator,
-                        table_matches, column_matches, AUDIT_TEXT, sql_config['bigquery']['project_id'],
-                        similar_sql, DEBUGGING_ROUNDS, LLM_VALIDATION
-                    )
-                final_sql = generated_sql
-                AUDIT_TEXT += f"\nFinal SQL after Debugger: \n{final_sql}"
+        if KGQ_ENABLED:
+            exact_sql_history = bq_connector.getExactMatches(user_question)
         else:
-            invalid_response = True
-            AUDIT_TEXT += "\nNo tables found in the Vector DB. The question cannot be answered with the provided data source!"
-    
-    final_sql = final_sql.replace("\n", " ")
-    final_sql = re.sub(r'```|sql', '', final_sql)
-    final_sql = re.sub(r'\\\\', '', final_sql)
-    st.write(f"Generated SQL: {final_sql}")
-    return final_sql
+            exact_sql_history = None
+
+        if exact_sql_history is not None:
+            final_sql = exact_sql_history
+            invalid_response = False
+            AUDIT_TEXT += "\nExact match found! Retrieving SQL query from cache."
+            intermediate_steps.append({
+                'step': 'Exact Match',
+                'details': f"Exact Match Found: {final_sql}"
+            })
+        else:
+            AUDIT_TEXT += process_step + "\nNo exact match found, retrieving schema and known good queries..."
+            process_step = "\n\nGet Similar Match: "
+            similar_sql = bq_connector.getSimilarMatches('example', USER_DATABASE, embedded_question, num_sql_matches, example_similarity_threshold) if KGQ_ENABLED else "No similar SQLs provided..."
+            process_step = "\n\nGet Table and Column Schema: "
+            table_matches = bq_connector.getSimilarMatches('table', USER_DATABASE, embedded_question, num_table_matches, table_similarity_threshold)
+            column_matches = bq_connector.getSimilarMatches('column', USER_DATABASE, embedded_question, num_column_matches, column_similarity_threshold)
+            AUDIT_TEXT += process_step + f"\nRetrieved Tables: \n{table_matches}\n\nRetrieved Columns: \n{column_matches}\n\nRetrieved Known Good Queries: \n{similar_sql}"
+            # Format the details for better readability
+            formatted_details = (
+                f"**Similar SQL:**\n```\n{similar_sql}\n```\n\n"
+                f"**Tables:**\n{table_matches}\n\n"
+                f"**Columns:**\n{column_matches}"
+            )
+            intermediate_steps.append({
+                'step': 'Similar Match',
+                'details': formatted_details
+            })
+
+            if table_matches or column_matches:
+                process_step = "\n\nBuild SQL: "
+                generated_sql = SQLBuilder.build_sql(DATA_SOURCE, user_question, table_matches, column_matches, similar_sql)
+                final_sql = generated_sql
+                AUDIT_TEXT += process_step + f"\nGenerated SQL: {generated_sql}"
+                intermediate_steps.append({
+                    'step': 'Build SQL',
+                    'details': f"Generated SQL: {generated_sql}"
+                })
+
+                if 'unrelated_answer' in generated_sql:
+                    invalid_response = True
+                    AUDIT_TEXT += "\nInvalid Response: "
+                else:
+                    invalid_response = False
+                    if RUN_DEBUGGER:
+                        generated_sql, invalid_response, AUDIT_TEXT = SQLDebugger.start_debugger(
+                            DATA_SOURCE, generated_sql, user_question, SQLValidator,
+                            table_matches, column_matches, AUDIT_TEXT, sql_config['bigquery']['project_id'],
+                            similar_sql, DEBUGGING_ROUNDS, LLM_VALIDATION
+                        )
+                    final_sql = generated_sql
+                    AUDIT_TEXT += f"\nFinal SQL after Debugger: \n{final_sql}"
+                    intermediate_steps.append({
+                        'step': 'Debugger',
+                        'details': f"Final SQL after Debugger: {final_sql}"
+                    })
+            else:
+                invalid_response = True
+                AUDIT_TEXT += "\nNo tables found in the Vector DB. The question cannot be answered with the provided data source!"
+                intermediate_steps.append({
+                    'step': 'No Tables Found',
+                    'details': "No tables found in the Vector DB."
+                })
+        final_sql = final_sql.replace("\n", " ")
+        final_sql = re.sub(r'```|sql', '', final_sql)
+        final_sql = re.sub(r'\\\\', '', final_sql)
+        #st.write(f"Generated SQL: {final_sql}")
+
+        # Save intermediate result
+        if 'intermediate_results' not in st.session_state:
+            st.session_state.intermediate_results = {}
+        if normalized_question not in st.session_state.intermediate_results:
+            st.session_state.intermediate_results[normalized_question] = []
+        st.session_state.intermediate_results[normalized_question].append({
+            "tool": "generate_sql",
+            "sql_generated": final_sql,
+            "intermediate_steps": intermediate_steps
+        })
+
+        return final_sql
+    except Exception as e:
+        return str(e)
 
 def execute_sql(user_question: str, sql_generated: str, output_mode: str = 'json'):
     """
@@ -213,19 +261,36 @@ def execute_sql(user_question: str, sql_generated: str, output_mode: str = 'json
     """
     st.markdown("---------------------------------------------")
     st.info(f"Executing SQL in {output_mode} mode...")
-    sql_generated = sql_generated.replace("\n", " ").replace("\\", "")
-    bq_df = bq_connector.retrieve_df(sql_generated)
-    if output_mode == 'json':
-        response = bq_df.to_json(orient='records')
-    else:
-        bq_df=pd.DataFrame(bq_df)
-        st.dataframe(bq_df)
-
-        if bq_df.shape[0] <20:
-            response = tabulate.tabulate(bq_df, headers='keys', tablefmt='pipe', showindex='never')
-            response += "\n\nAbove table answers user question. Please provide a textual summary of this data to answer users question."
+    try:
+        normalized_question = normalize_string(user_question)
+        sql_generated = sql_generated.replace("\n", " ").replace("\\", "")
+        bq_df = bq_connector.retrieve_df(sql_generated)
+        if output_mode == 'json':
+            response = bq_df.to_json(orient='records')
         else:
-            response = "Data is too large to pass as text or create textual summary. Please explain to the user that the answer to their question is displayed as a table above."
+            bq_df=pd.DataFrame(bq_df)
+            st.dataframe(bq_df)
+
+            if bq_df.shape[0] <20:
+                response = tabulate.tabulate(bq_df, headers='keys', tablefmt='pipe', showindex='never')
+                response += "\n\nAbove table answers user question. Please provide a textual summary of this data to answer users question."
+            else:
+                response = "Data is too large to pass as text or create textual summary. Please explain to the user that the answer to their question is displayed as a table above."
+            
+        # Save intermediate result
+        if 'intermediate_results' not in st.session_state:
+            st.session_state.intermediate_results = {}
+        if normalized_question not in st.session_state.intermediate_results:
+            st.session_state.intermediate_results[normalized_question] = []
+        st.session_state.intermediate_results[normalized_question].append({
+            "tool": "execute_sql",
+            "sql_generated": sql_generated,
+            "result": bq_df
+        })
+    except Exception as e:
+        return str(e)
+
+
     return response
 
 def subset_churn_contribution_analysis(user_question: str, sql_generated: str):
@@ -262,12 +327,14 @@ def subset_churn_contribution_analysis(user_question: str, sql_generated: str):
     """
     st.markdown("---------------------------------------------")
     st.info("Performing subset Churn analysis...")
-    sql_generated = remove_sql_and_backticks(sql_generated).replace("\n", " ").replace("\\", "")
-    df = bq_connector.retrieve_df(sql_generated)
-    df2 = xgb_scorer.model_predictor(df.copy())
-    response = f"The average churn prediction after the treatment changed from {round(100 * df2['prediction'].mean(), 2)}% to {round(100 * df2['new_prediction'].mean())}%."
-    return response
-
+    try:
+        sql_generated = remove_sql_and_backticks(sql_generated).replace("\n", " ").replace("\\", "")
+        df = bq_connector.retrieve_df(sql_generated)
+        df2 = xgb_scorer.model_predictor(df.copy())
+        response = f"The average churn prediction after the treatment changed from {round(100 * df2['prediction'].mean(), 2)}% to {round(100 * df2['new_prediction'].mean())}%."
+        return response
+    except Exception as e:
+        return str(e)
 
 def subset_clv_analysis(user_question:str, sql_generated:str,treatment_cost:float=0.0):
 
@@ -302,54 +369,57 @@ def subset_clv_analysis(user_question:str, sql_generated:str,treatment_cost:floa
     """
     st.markdown("---------------------------------------------")
     st.info("CLV Analysis Tool is running")
-    # Execute the SQL query
-    sql_generated=remove_sql_and_backticks(sql_generated)
-    sql_generated=sql_generated.replace("\n", " ")
-    sql_generated=sql_generated.replace("\\", "")
+    try:
+        # Execute the SQL query
+        sql_generated=remove_sql_and_backticks(sql_generated)
+        sql_generated=sql_generated.replace("\n", " ")
+        sql_generated=sql_generated.replace("\\", "")
 
-    ##Get the subset data from bigquery
-    df = bq_connector.retrieve_df(sql_generated)
-    df['current_revenue']=df['monthlyrevenue']*12
-    #df['current_clv']=(df['monthlyrevenue']*12*df['prediction'])/(1+0.09-df['prediction'])
-    df['current_clv'] = (df['monthlyrevenue'] * 12 * (1 - df['prediction'])) / (0.09 + df['prediction'])
+        ##Get the subset data from bigquery
+        df = bq_connector.retrieve_df(sql_generated)
+        df['current_revenue']=df['monthlyrevenue']*12
+        #df['current_clv']=(df['monthlyrevenue']*12*df['prediction'])/(1+0.09-df['prediction'])
+        df['current_clv'] = (df['monthlyrevenue'] * 12 * (1 - df['prediction'])) / (0.09 + df['prediction'])
 
-    #print(df.shape)
-    ##Get the model prediction on this data
-    df2=xgb_scorer.model_predictor(df)
-    #print(df.shape)
+        #print(df.shape)
+        ##Get the model prediction on this data
+        df2=xgb_scorer.model_predictor(df)
+        #print(df.shape)
 
-    df2['treatment_clv']=((df['monthlyrevenue']*12-treatment_cost)*(1-df['new_prediction']))/(0.09+df['new_prediction'])
-    
-    response = (
-        "CLV Impact Analysis Report:\n"
-        "I have used the Discounted Cash Flow method to calculate the Customer Lifetime Value (CLV) for 1 year for the customers in the subset.\n\n"
-        "Assumptions:\n"
-        "- Discount rate: 9%\n"
-        "- Model churn prediction is the probability of churn in 1 year\n"
-        "- Treatment cost per customer is: ${}\n\n"
-        "Results:\n"
-        "- The average CLV before the treatment is ${}.\n"
-        "- The average CLV after the treatment is ${}.\n"
-        "- The average churn predicted before the treatment is {}%.\n"
-        "- The average churn predicted after the treatment is {}%.\n"
-        "- The average CLV impact made by the treatment is ${} per customer.\n"
-        "- The number of customers in the subset is {}.\n"
-        "- Hence, according to the model, the treatment would generate ${} in total revenue.\n\n"
-        "Note that the above results are based on the model predictions and assumptions made. This is a simplified version of the actual CLV calculation.\n"
-        "You can use this information to understand the impact of the treatment on the subset of customers and make informed decisions with more detailed analysis."
-    ).format(
-        treatment_cost,
-        round(df2['current_clv'].mean(), 2),
-        round(df2['treatment_clv'].mean(), 2),
-        round(100 * df2['prediction'].mean(), 2),
-        round(100 * df2['new_prediction'].mean(), 2),
-        round(df2['treatment_clv'].mean() - df2['current_clv'].mean(), 2),
-        df2.shape[0],
-        round(((round(df2['treatment_clv'].mean() - df2['current_clv'].mean(), 2)) * df2.shape[0]), 2)
-    )
-    print(response)
-    #st.markdown(response)
-    return response
+        df2['treatment_clv']=((df['monthlyrevenue']*12-treatment_cost)*(1-df['new_prediction']))/(0.09+df['new_prediction'])
+        
+        response = (
+            "CLV Impact Analysis Report:\n"
+            "I have used the Discounted Cash Flow method to calculate the Customer Lifetime Value (CLV) for 1 year for the customers in the subset.\n\n"
+            "Assumptions:\n"
+            "- Discount rate: 9%\n"
+            "- Model churn prediction is the probability of churn in 1 year\n"
+            "- Treatment cost per customer is: ${}\n\n"
+            "Results:\n"
+            "- The average CLV before the treatment is ${}.\n"
+            "- The average CLV after the treatment is ${}.\n"
+            "- The average churn predicted before the treatment is {}%.\n"
+            "- The average churn predicted after the treatment is {}%.\n"
+            "- The average CLV impact made by the treatment is ${} per customer.\n"
+            "- The number of customers in the subset is {}.\n"
+            "- Hence, according to the model, the treatment would generate ${} in total revenue.\n\n"
+            "Note that the above results are based on the model predictions and assumptions made. This is a simplified version of the actual CLV calculation.\n"
+            "You can use this information to understand the impact of the treatment on the subset of customers and make informed decisions with more detailed analysis."
+        ).format(
+            treatment_cost,
+            round(df2['current_clv'].mean(), 2),
+            round(df2['treatment_clv'].mean(), 2),
+            round(100 * df2['prediction'].mean(), 2),
+            round(100 * df2['new_prediction'].mean(), 2),
+            round(df2['treatment_clv'].mean() - df2['current_clv'].mean(), 2),
+            df2.shape[0],
+            round(((round(df2['treatment_clv'].mean() - df2['current_clv'].mean(), 2)) * df2.shape[0]), 2)
+        )
+        print(response)
+        #st.markdown(response)
+        return response
+    except Exception as e:
+        return str(e)
 
 def model_stat(user_question:str):
 
@@ -370,12 +440,14 @@ def model_stat(user_question:str):
     """
     st.markdown("---------------------------------------------")
     st.info("Model Stats Tool is running")
-    note= "\nNote:\n- Unless specified by the user always use test data validation stats for model stats explanation"
-    with open(model_config['model']['model_stats'], 'r') as file:
-        model_stats = file.read()
-    model_stats+=note
-    return model_stats
-
+    try:
+        note= "\nNote:\n- Unless specified by the user always use test data validation stats for model stats explanation"
+        with open(model_config['model']['model_stats'], 'r') as file:
+            model_stats = file.read()
+        model_stats+=note
+        return model_stats
+    except Exception as e:
+        return str(e)
 
 def generate_visualizations(user_question: str, generated_sql: str):
     """
@@ -395,46 +467,70 @@ def generate_visualizations(user_question: str, generated_sql: str):
 
     st.markdown("---------------------------------------------")
     st.info("Generating Visualizations...")
-    generated_sql = generated_sql.replace("\n", " ").replace("\\", "")
-    sql_results_json = bq_connector.retrieve_df(generated_sql).to_json(orient='records')
-    
-    # Generate unique element IDs
-    chart_div_1_id = "chart_div_" + str(uuid.uuid4()).replace("-", "")
+    try:
+        normalized_question = normalize_string(user_question)
+        generated_sql = generated_sql.replace("\n", " ").replace("\\", "")
+        sql_results = bq_connector.retrieve_df(generated_sql)
+        sql_results_json=sql_results.to_json(orient='records')
 
-    # Generate the visualizations using VisualizeAgent
-    charts_js = visualize_agent.generate_charts(user_question, generated_sql, sql_results_json)
-    if charts_js is not None:
-        # Ensure the JavaScript code does not have nested calls
-        chart_js_1 = charts_js["chart_div"].replace("chart_div", chart_div_1_id).replace("new google.charts.BarChart", "new google.visualization.BarChart")
+        ###Adding conditions to prevent full dataset going into visualization agent
+        if sql_results.shape[0] == 0:
+            return f"Sorry. Unexpected error due to invalid sql query on data retrieval"
+        elif sql_results.shape[0] > 1000:
+            return f"""Sorry. Unexpected error due to large data size. Please try with a smaller subset of data.
+            If you find the query to be incorrect, please rephrase the question and try again."""
+        else:
+            # Generate unique element IDs
+            chart_div_1_id = "chart_div_" + str(uuid.uuid4()).replace("-", "")
 
-        # Create the full HTML content for the first chart
-        chart_html_1 = f'''
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Google Chart 1</title>
-            <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
-            <script type="text/javascript">
-                google.charts.load('current', {{packages: ['corechart']}});
-                google.charts.setOnLoadCallback(drawChart);
-                function drawChart() {{
-                    {chart_js_1}
-                }}
-            </script>
-        </head>
-        <body>
-            <div id="{chart_div_1_id}" style="width: 600px; height: 300px;"></div>
-        </body>
-        </html>
-        '''
+            # Generate the visualizations using VisualizeAgent
+            charts_js = visualize_agent.generate_charts(user_question, generated_sql, sql_results_json)
+            if charts_js is not None:
+                # Ensure the JavaScript code does not have nested calls
+                chart_js_1 = charts_js["chart_div"].replace("chart_div", chart_div_1_id).replace("new google.charts.BarChart", "new google.visualization.BarChart")
 
-        # Use Streamlit's components to embed raw HTML
-        st.markdown("---------------------------------------------")
-        st.markdown("Here is the visualization requested:")
-        st.components.v1.html(chart_html_1, height=350)
-        return chart_html_1
-    else:
-        return f"Sorry. Unexpected error due to invalid sql query on data retrieval"
+                # Create the full HTML content for the first chart
+                chart_html_1 = f'''
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Google Chart 1</title>
+                    <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+                    <script type="text/javascript">
+                        google.charts.load('current', {{packages: ['corechart']}});
+                        google.charts.setOnLoadCallback(drawChart);
+                        function drawChart() {{
+                            {chart_js_1}
+                        }}
+                    </script>
+                </head>
+                <body>
+                    <div id="{chart_div_1_id}" style="width: 600px; height: 300px;"></div>
+                </body>
+                </html>
+                '''
+
+                # Use Streamlit's components to embed raw HTML
+                st.markdown("---------------------------------------------")
+                st.markdown("Here is the visualization requested:")
+                st.components.v1.html(chart_html_1, height=350)
+
+                # Save intermediate result
+                if 'intermediate_results' not in st.session_state:
+                    st.session_state.intermediate_results = {}
+                if normalized_question not in st.session_state.intermediate_results:
+                    st.session_state.intermediate_results[normalized_question] = []
+                st.session_state.intermediate_results[normalized_question].append({
+                    "tool": "generate_visualizations",
+                    "sql_generated": generated_sql,
+                    "result": chart_html_1
+                })
+
+                return chart_html_1
+            else:
+                return f"Sorry. Unexpected error due to invalid sql query on data retrieval"
+    except Exception as e:
+        return str(e)
 
 
 def question_reformer(user_question:str):
@@ -455,11 +551,13 @@ def question_reformer(user_question:str):
     """
     st.markdown("---------------------------------------------")
     st.info("Question Reformer is running")
-    reformed_question=task_master.ask_taskmaster(user_question)
-    #reformed_question=response.candidates[0].content.parts[0].text
-    print(f"Reformed Question: {reformed_question}")
-
-    return reformed_question
+    try:
+        reformed_question=task_master.ask_taskmaster(user_question)
+        #reformed_question=response.candidates[0].content.parts[0].text
+        print(f"Reformed Question: {reformed_question}")
+        return reformed_question
+    except Exception as e:
+        return str(e)
 
 def subset_shap_summary(customer_data_sql_query:str,shap_data_sql_query:str,user_question:str):
     """
@@ -496,97 +594,100 @@ def subset_shap_summary(customer_data_sql_query:str,shap_data_sql_query:str,user
 """
     st.markdown("---------------------------------------------")
     st.info("Subset Churn Summary Tool is running")
-    customer_data_sql_query=remove_sql_and_backticks(customer_data_sql_query)
-    customer_data_sql_query=customer_data_sql_query.replace("\\", "")
-    shap_data_sql_query=remove_sql_and_backticks(shap_data_sql_query)
-    shap_data_sql_query=shap_data_sql_query.replace("\\", "")
+    try:
+        customer_data_sql_query=remove_sql_and_backticks(customer_data_sql_query)
+        customer_data_sql_query=customer_data_sql_query.replace("\\", "")
+        shap_data_sql_query=remove_sql_and_backticks(shap_data_sql_query)
+        shap_data_sql_query=shap_data_sql_query.replace("\\", "")
 
-    ##Validate the query have select * enabled
-    customer_data_sql_query_updated=QueryRefiller.check(generated_sql=customer_data_sql_query)
-    print(f"Updated custommer sql query:{customer_data_sql_query_updated}")
+        ##Validate the query have select * enabled
+        customer_data_sql_query_updated=QueryRefiller.check(generated_sql=customer_data_sql_query)
+        print(f"Updated custommer sql query:{customer_data_sql_query_updated}")
 
-    shap_data_sql_query_updated=QueryRefiller.check(generated_sql=shap_data_sql_query)
-    print(f"Updated shap sql query:{shap_data_sql_query_updated}")
-
-
-    ##Get the subset data from bigquery
-    df_data=bq_connector.retrieve_df(customer_data_sql_query_updated)
-    df_shap_data=bq_connector.retrieve_df(shap_data_sql_query_updated)
-
-    ##Order both dataframes by customerid
-    df_data=df_data.sort_values(by='customerid')
-    df_shap_data=df_shap_data.sort_values(by='customerid')
-
-    def sigmoid(x):
-        """ Sigmoid function to convert log-odds to probabilities. """
-        return 1 / (1 + np.exp(-x))
-    
-    base_value=1.0    
-    base_probability = sigmoid(base_value)
-    results = []
-    feature_importances = {}
-    # Process each feature
-    ##Remove the SHAP prefix from SHAP data columns
-    df_shap_data.columns = df_shap_data.columns.str.replace('shapvalue_', '')
-    common_columns = df_data.columns.intersection(df_shap_data.columns)
-    #Remove if column customerid exists
-    columns_to_drop = ['customerid', 'churn']
-
-    for col in columns_to_drop:
-        if col in common_columns:
-            common_columns = common_columns.drop(col)
-
-    print(f"data shape:{df_data.shape}")
-    print(f"shap data shape:{df_shap_data.shape}")
-    # Calculate feature importances
-    for feature in common_columns:
-        feature_shap_values = df_shap_data[feature]
-        feature_importances[feature] = np.mean(np.abs(feature_shap_values))
+        shap_data_sql_query_updated=QueryRefiller.check(generated_sql=shap_data_sql_query)
+        print(f"Updated shap sql query:{shap_data_sql_query_updated}")
 
 
-    importance_df = pd.DataFrame(list(feature_importances.items()), columns=['Feature', 'Importance'])
-    print(importance_df.head())
-    importance_df.sort_values('Importance', ascending=False, inplace=True)
-    importance_df['Rank'] = range(1, len(importance_df) + 1)
-    importance_ranks = importance_df.set_index('Feature')['Rank'].to_dict()
-    #print(2)
+        ##Get the subset data from bigquery
+        df_data=bq_connector.retrieve_df(customer_data_sql_query_updated)
+        df_shap_data=bq_connector.retrieve_df(shap_data_sql_query_updated)
 
-    for feature in common_columns:
-        feature_values = df_data[feature]
-        feature_shap_values = df_shap_data[feature]
-        df = pd.DataFrame({feature: feature_values, 'SHAP Value': feature_shap_values})
-        numeric_features = df_data.select_dtypes(include=['number']).columns
+        ##Order both dataframes by customerid
+        df_data=df_data.sort_values(by='customerid')
+        df_shap_data=df_shap_data.sort_values(by='customerid')
 
-        if feature in numeric_features:
-            df['Group'] = pd.qcut(df[feature], 5, duplicates='drop')
-        else:
-            df['Group'] = df[feature]
+        def sigmoid(x):
+            """ Sigmoid function to convert log-odds to probabilities. """
+            return 1 / (1 + np.exp(-x))
+        
+        base_value=1.0    
+        base_probability = sigmoid(base_value)
+        results = []
+        feature_importances = {}
+        # Process each feature
+        ##Remove the SHAP prefix from SHAP data columns
+        df_shap_data.columns = df_shap_data.columns.str.replace('shapvalue_', '')
+        common_columns = df_data.columns.intersection(df_shap_data.columns)
+        #Remove if column customerid exists
+        columns_to_drop = ['customerid', 'churn']
 
-        group_avg = df.groupby('Group', observed=True).agg({
-            'SHAP Value': 'mean',
-            feature: 'count'
-        }).reset_index()
+        for col in columns_to_drop:
+            if col in common_columns:
+                common_columns = common_columns.drop(col)
 
-        group_avg.rename(columns={feature: 'Count'}, inplace=True)
-        group_avg['Adjusted Probability'] = sigmoid(base_value + group_avg['SHAP Value'])
-        group_avg['Probability Change (%)'] = (group_avg['Adjusted Probability'] - base_probability) * 100
-        group_avg['Feature'] = feature
-        group_avg['Feature Importance'] = feature_importances[feature]
-        group_avg['Importance Rank'] = importance_ranks[feature]
-        results.append(group_avg)
-    
-    result_df = pd.concat(results, ignore_index=True)
-    ##Count of groups should be atleast 50 records - If not remove the group
-    result_df = result_df[result_df['Count'] >= 50]
-    result_df.sort_values(['Importance Rank', 'Probability Change (%)'], ascending=[True, False], inplace=True)
-    result_df=result_df[result_df['Importance Rank']<=10]
-    #print(tabulate.tabulate(result_df[['Feature','Group','Probability Change (%)','SHAP Value','Importance Rank']].head(30), headers='keys', tablefmt='pipe', showindex='never'))
+        print(f"data shape:{df_data.shape}")
+        print(f"shap data shape:{df_shap_data.shape}")
+        # Calculate feature importances
+        for feature in common_columns:
+            feature_shap_values = df_shap_data[feature]
+            feature_importances[feature] = np.mean(np.abs(feature_shap_values))
 
-    report=churn_explainer.ask_churnoracle(shap_summary=f"""The SHAP summary from the model is: 
-    {tabulate.tabulate(result_df[['Feature','Group','Probability Change (%)','SHAP Value','Importance Rank']], headers='keys', tablefmt='pipe', showindex='never')}""",
-    user_question=user_question)
-    #print(report)
-    return report
+
+        importance_df = pd.DataFrame(list(feature_importances.items()), columns=['Feature', 'Importance'])
+        print(importance_df.head())
+        importance_df.sort_values('Importance', ascending=False, inplace=True)
+        importance_df['Rank'] = range(1, len(importance_df) + 1)
+        importance_ranks = importance_df.set_index('Feature')['Rank'].to_dict()
+        #print(2)
+
+        for feature in common_columns:
+            feature_values = df_data[feature]
+            feature_shap_values = df_shap_data[feature]
+            df = pd.DataFrame({feature: feature_values, 'SHAP Value': feature_shap_values})
+            numeric_features = df_data.select_dtypes(include=['number']).columns
+
+            if feature in numeric_features:
+                df['Group'] = pd.qcut(df[feature], 5, duplicates='drop')
+            else:
+                df['Group'] = df[feature]
+
+            group_avg = df.groupby('Group', observed=True).agg({
+                'SHAP Value': 'mean',
+                feature: 'count'
+            }).reset_index()
+
+            group_avg.rename(columns={feature: 'Count'}, inplace=True)
+            group_avg['Adjusted Probability'] = sigmoid(base_value + group_avg['SHAP Value'])
+            group_avg['Probability Change (%)'] = (group_avg['Adjusted Probability'] - base_probability) * 100
+            group_avg['Feature'] = feature
+            group_avg['Feature Importance'] = feature_importances[feature]
+            group_avg['Importance Rank'] = importance_ranks[feature]
+            results.append(group_avg)
+        
+        result_df = pd.concat(results, ignore_index=True)
+        ##Count of groups should be atleast 50 records - If not remove the group
+        result_df = result_df[result_df['Count'] >= 50]
+        result_df.sort_values(['Importance Rank', 'Probability Change (%)'], ascending=[True, False], inplace=True)
+        result_df=result_df[result_df['Importance Rank']<=10]
+        #print(tabulate.tabulate(result_df[['Feature','Group','Probability Change (%)','SHAP Value','Importance Rank']].head(30), headers='keys', tablefmt='pipe', showindex='never'))
+
+        report=churn_explainer.ask_churnoracle(shap_summary=f"""The SHAP summary from the model is: 
+        {tabulate.tabulate(result_df[['Feature','Group','Probability Change (%)','SHAP Value','Importance Rank']], headers='keys', tablefmt='pipe', showindex='never')}""",
+        user_question=user_question)
+        #print(report)
+        return report
+    except Exception as e:
+        return str(e)
 
 def customer_recommendations(user_question:str, customer_data_query:str,counterfatual_data_query:str):
     """
@@ -610,27 +711,30 @@ def customer_recommendations(user_question:str, customer_data_query:str,counterf
     """
     st.markdown("---------------------------------------------")
     st.info("Customer Recommendations Tool is running")
-    # Execute the SQL query
-    customer_data_query=remove_sql_and_backticks(customer_data_query)
-    customer_data_query=customer_data_query.replace("\\", "")
+    try:
+        # Execute the SQL query
+        customer_data_query=remove_sql_and_backticks(customer_data_query)
+        customer_data_query=customer_data_query.replace("\\", "")
 
-    counterfatual_data_query=remove_sql_and_backticks(counterfatual_data_query)
-    counterfatual_data_query=counterfatual_data_query.replace("\\", "")
+        counterfatual_data_query=remove_sql_and_backticks(counterfatual_data_query)
+        counterfatual_data_query=counterfatual_data_query.replace("\\", "")
 
-    ##Get the subset data from bigquery
-    counterfactuals = bq_connector.retrieve_df(counterfatual_data_query)
-    customer_data = bq_connector.retrieve_df(customer_data_query)
+        ##Get the subset data from bigquery
+        counterfactuals = bq_connector.retrieve_df(counterfatual_data_query)
+        customer_data = bq_connector.retrieve_df(customer_data_query)
 
-    #print(counterfactuals.shape[0])
-    #print(len(counterfactuals.to_json(orient='records')))
+        #print(counterfactuals.shape[0])
+        #print(len(counterfactuals.to_json(orient='records')))
 
-    if customer_data.shape[0]==0:
-        response=f"Invalid customer ID"
-    else:
-        response=churn_explainer.ask_recommendation(user_question=user_question,
-                                        customer=customer_data.to_json(orient='records'),
-                                        counterfactual=counterfactuals.to_json(orient='records'))
-    return response
+        if customer_data.shape[0]==0:
+            response=f"Invalid customer ID"
+        else:
+            response=churn_explainer.ask_recommendation(user_question=user_question,
+                                            customer=customer_data.to_json(orient='records'),
+                                            counterfactual=counterfactuals.to_json(orient='records'))
+        return response
+    except Exception as e:
+        return str(e)
 
 def sample_questions():
 
@@ -740,7 +844,7 @@ def walkthrough():
 
 
 cot_prompts = """
-You are an intelligent agent named MLi that answers user questions related to telecom churn analysis.
+You are an intelligent agent named MLy that answers user questions related to telecom churn analysis.
 You have access to multitude of tools like:
 
   - question_reformer: To reformulate the user question to make it more clear and concise or to split into different tasks
@@ -793,7 +897,10 @@ The welcome message should be as below:
 If the user asks for a walkthrough:-
     - Provide a short introduction to all the tools you have and what infomration it helps with
     - It should be short and concise
-    
+
+If you recieve error from any tool:-
+    - Provide the error message in easy to understand words to the user
+    - Ask them to rephrase the question in detail or ask a different question. 
     """
 
 gen_model = genai.GenerativeModel(
@@ -803,28 +910,12 @@ gen_model = genai.GenerativeModel(
     generation_config={"temperature":0.3})
 #chat = gen_model.start_chat(enable_automatic_function_calling=True)
 
-# Gemini uses 'model' for assistant; Streamlit uses 'assistant'
+# Function to map roles to Streamlit roles
 def role_to_streamlit(role):
-  if role == "model":
-    return "assistant"
-  else:
-    return role
+    return "assistant" if role == "model" else role
 
-
-
+# Function to add sidebar elements
 def add_sidebar_elements():
-
-    
-    
-    # linkedin_url = "https://www.linkedin.com/in/david-babu-15047096/"
-    # #buy_me_a_coffee_url = "https://www.buymeacoffee.com/yourusername"
-
-    # linkedin_icon_html = f"""
-    #     <a href="{linkedin_url}" target="_blank">
-    #         <img src="https://upload.wikimedia.org/wikipedia/commons/e/e9/Linkedin_icon.svg" alt="LinkedIn" style="width: 30px; height: 30px; margin: 10px 0;">
-    #     </a>
-    # """
-
     linkedin_url = "https://www.linkedin.com/in/david-babu-15047096/"
     ko_fi_url = "https://ko-fi.com/Q5Q0V3AJA"
 
@@ -838,80 +929,91 @@ def add_sidebar_elements():
         </a>
     </div>
     """
+    st.sidebar.markdown("<br>", unsafe_allow_html=True)
+    st.sidebar.markdown("<br>", unsafe_allow_html=True)
+    with st.sidebar.expander("Click here for a short introduction to know what I can do for you"):
+        st.markdown(walkthrough())
+    st.sidebar.markdown("<br>", unsafe_allow_html=True)
+    with st.sidebar.expander("Click here to see some sample questions I can help you with"):
+        st.markdown(sample_questions())
 
     with st.sidebar:
         st.markdown("<br>", unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown("<br>", unsafe_allow_html=True)  # Adding space at the top if needed
+        st.markdown("<br>", unsafe_allow_html=True)
         st.markdown(icons_html, unsafe_allow_html=True)
 
-        
-
-# Function to display chat history
 def display_chat_history(chat_history):
     for message in chat_history:
         role = role_to_streamlit(message.role)
         parts = message.parts
         
-        # Display message parts based on their type
         for part in parts:
             if "text" in part:
                 if part.text and part.text.strip():
                     with st.chat_message(role):
                         st.write(part.text)
 
-st.markdown("<h2 style='text-align: center;'>Meet MLi 🤖: Your ML Model Whisperer</h2>", unsafe_allow_html=True)
-st.markdown("<br>", unsafe_allow_html=True)
-st.markdown("<br>", unsafe_allow_html=True)
-st.markdown("<br>", unsafe_allow_html=True)
 
-st.sidebar.markdown("<br>", unsafe_allow_html=True)
-st.sidebar.markdown("<br>", unsafe_allow_html=True)
-with st.sidebar.expander("Click here for a short introduction to know what I can do for you if you are new to me"):
-    st.markdown(walkthrough())
-st.sidebar.markdown("<br>", unsafe_allow_html=True)
-with st.sidebar.expander("Here are some sample questions if you want to know what you can ask me"):
-    st.markdown(sample_questions())
-add_sidebar_elements()
+
+
+st.set_page_config(
+    page_title="MLy - ML Model Whisperer",
+    page_icon="🤖",
+)
+
+
+# Directly inject custom CSS to make expander header text darker
+st.markdown(
+    """
+    <style>
+    /* Make sidebar expander header text darker */
+    .stSidebar .st-expander .st-expanderHeader {
+        color: #1a1a1a !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
 # Initialize chat session in session state
 if "chat" not in st.session_state:
     st.session_state.chat = gen_model.start_chat(enable_automatic_function_calling=True)
+if "intermediate_results" not in st.session_state:
+    st.session_state.intermediate_results = {}
 
-#tab1, tab2, tab3 = st.tabs(["Chatbot", "QA Chatbot", "chk"])
 
-
-# Display chat messages from history above the current input box
-display_chat_history(st.session_state.chat.history)
-
-# Accept user's next message, add to context, resubmit context to Gemini
-if prompt := st.chat_input("I possess a well of knowledge. What would you like to know?"):
-    # Display user's last message
+# Function to handle new user input and get response from the model
+def handle_user_input(prompt):
+    # Display user's message
     st.chat_message("user").markdown(prompt)
-    
     with st.spinner("Processing..."):
         # Send user entry to Gemini and get the response
         response = st.session_state.chat.send_message(prompt)
+        response_text = response.candidates[0].content.parts[0].text
     
-    # Add model's response to chat history and display it
+    # Display model's response
     with st.chat_message("assistant"):
-        st.write(response.candidates[0].content.parts[0].text)
-# with tab2:
-#   st.write(st.session_state.chat.history)
-  
-# with tab3:
-#   for message in st.session_state.chat.history:
-#         st.write(message.role)
-#         st.write(message.parts[0].text)
-# # conversation
-# for message in st.session_state.chat_history:
-#     if isinstance(message, AIMessage):
-#         with st.chat_message("AI"):
-#             st.write(message)
-#     elif isinstance(message, HumanMessage):
-#         with st.chat_message("Human"):
-#             st.write(message)
+        st.write(response_text)
+
+    
+
+##Add Title
+st.markdown("<h2 style='text-align: center;'>Meet MLy 🤖: Your ML Model Whisperer</h2>", unsafe_allow_html=True)
+st.markdown("<br>", unsafe_allow_html=True)
+st.markdown("<br>", unsafe_allow_html=True)
+st.markdown("<br>", unsafe_allow_html=True)
+
+
+# Display sidebar elements
+add_sidebar_elements()
+
+display_chat_history(st.session_state.chat.history)
+
+if prompt := st.chat_input("I possess a well of knowledge. What would you like to know?"):
+    handle_user_input(prompt)
+    
 
 
