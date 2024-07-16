@@ -275,7 +275,8 @@ def execute_sql(user_question: str, sql_generated: str, output_mode: str = 'json
                 response = tabulate.tabulate(bq_df, headers='keys', tablefmt='pipe', showindex='never')
                 response += "\n\nAbove table answers user question. Please provide a textual summary of this data to answer users question."
             else:
-                response = "Data is too large to pass as text or create textual summary. Please explain to the user that the answer to their question is displayed as a table above."
+                response = f"""Explain to the user that the answer to their question is displayed as a table above.
+                            Data is too large to create a textual summary though. If user needs more insights, please ask for more specific question."""
             
         # Save intermediate result
         if 'intermediate_results' not in st.session_state:
@@ -901,6 +902,11 @@ If the user asks for a walkthrough:-
 If you recieve error from any tool:-
     - Provide the error message in easy to understand words to the user
     - Ask them to rephrase the question in detail or ask a different question. 
+
+If the data size is too large for the tool to handle and user have asked for grouping/buckets, 
+    - Ask for more details on the grouping/buckets logic
+    - Ask to please give how the bucketing logic should be done and bucketing is necessary for grouping numeric continous data for summary
+    - if user had asked for vizualization/plots, mention that for vizualization you can only handle upto 1000 records
     """
 
 gen_model = genai.GenerativeModel(

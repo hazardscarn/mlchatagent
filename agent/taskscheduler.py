@@ -184,6 +184,14 @@ class TaskMaster(ABC):
                 - group by : age_bucket
                 - Note : Never use Select * for any plot or visualization
 
+            **Example 7**
+            **User Question:** "What is the  age distribution of customers who have higher churn because of revenue_per_minute?"
+            **Reformed Question:**
+            1. "Get the age distribution by bucketing age into 10 buckets for customers  who have higher churn because of revenue_per_minute
+                - filter by: churn because of revenue_per_minute
+                - select: age_bucket, age bucket min, age_bucket max, count,avg churn
+                - group by: age_bucket
+                - Note : To identify customers who have higher churn because of revenue_per_minute, use the customer_shap_data and filter by revenue_per_minute>0.5"
             Below is the user question:
             {user_question}
 
@@ -195,6 +203,7 @@ class TaskMaster(ABC):
             - Maintain the context of the original user question while decomposing it into sub-questions.
             - Output should be just the Reformed Question or SubQuestions
             - Use Counterfactual Analysis tool only when the question is about a single customers churn recommendation
+            - You should only return the reformed question or subquestions. DO NOT return any additional content or explanation.
             """
         taks_result = self.task_model.generate_content(prompt, stream=False)
         return taks_result.candidates[0].content.parts[0].text
