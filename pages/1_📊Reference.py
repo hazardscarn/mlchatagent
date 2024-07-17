@@ -15,8 +15,8 @@ def display_intermediate_results(intermediate_results):
                 for result in results:
                     st.markdown("<br>", unsafe_allow_html=True)
                     st.markdown(f"**Tool Used: {result['tool']}**")
-                    st.markdown("<br>", unsafe_allow_html=True)
-                    st.markdown(f"**SQL Generated:** `{result['sql_generated']}`")
+                    # st.markdown("<br>", unsafe_allow_html=True)
+                    # st.markdown(f"**SQL Generated:** `{result['sql_generated']}`")
                     if 'error' in result:
                         st.error(f"Error: {result['error']}")
                     else:
@@ -31,6 +31,9 @@ def display_intermediate_results(intermediate_results):
                         elif result['tool'] == "generate_visualizations":
                             st.markdown("**Result Plot**")
                             st.components.v1.html(result['result'], height=350)
+                        elif result['tool'] == "subset_shap_explanation":
+                            st.markdown("**SHAP Explanation for the subset DataFrame**")
+                            st.dataframe(result['result_df'])
                         elif result['tool'] == "Final_Response":
                             st.markdown("**Final Response**")
                             st.markdown(f"**{result['Response']}**")

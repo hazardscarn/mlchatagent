@@ -5,3 +5,5 @@ venv
 data
 results
 cloud_note.txt
+ml_process/scratch_script.py
+ml_process/scratchnb.ipynb

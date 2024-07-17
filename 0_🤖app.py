@@ -32,6 +32,11 @@ import streamlit as st
 from langchain_core.messages import AIMessage, HumanMessage
 import uuid
 from google.cloud import secretmanager
+from contextlib import contextmanager, redirect_stdout
+from io import StringIO
+from typing import Dict, Text
+import time
+import ast
 
 #load_dotenv()
 
@@ -113,6 +118,9 @@ EXECUTE_FINAL_SQL = sql_config['sql_run']['EXECUTE_FINAL_SQL']
 VECTOR_STORE = sql_config['sql_run']['VECTOR_STORE']
 DATA_SOURCE = sql_config['sql_run']['DATA_SOURCE']
 KGQ_ENABLED = sql_config['sql_run']['KGQ_ENABLED']
+with open(model_config['model']['shap_base_value'], "r") as file:
+    base_value = float(file.read().strip())
+
 
 def remove_sql_and_backticks(input_text):
     modified_text = re.sub(r'```|sql', '', input_text)
@@ -139,8 +147,8 @@ def generate_sql(user_question: str):
         str
             the result sql query generated
     """
-    st.markdown("---------------------------------------------")
-    st.info("Generating SQL to answer the user question...")
+    
+    st.markdown("--------------------------------------📥 *Generating Query* 📥--------------------------------------")
     intermediate_steps = []
     normalized_question = normalize_string(user_question)
     try:
@@ -259,8 +267,8 @@ def execute_sql(user_question: str, sql_generated: str, output_mode: str = 'json
         The result of the SQL query. If output_mode is 'json', the result is a dictionary. If output_mode is 'table', 
         the result is a string formatted as a markdown table.
     """
-    st.markdown("---------------------------------------------")
-    st.info(f"Executing SQL in {output_mode} mode...")
+    st.markdown("--------------------------------------⚙️ *Executing Query* ⚙️--------------------------------------")
+
     try:
         normalized_question = normalize_string(user_question)
         sql_generated = sql_generated.replace("\n", " ").replace("\\", "")
@@ -326,11 +334,12 @@ def subset_churn_contribution_analysis(user_question: str, sql_generated: str):
         - The output from this is the report. You have to display this report to the user as it is. DO NOT MODIFY THE OUTPUT.                
     
     """
-    st.markdown("---------------------------------------------")
-    st.info("Performing subset Churn analysis...")
+    st.markdown("--------------------------------------📊 *Subset Churn Impact Tool* 📊--------------------------------------")
+
     try:
         sql_generated = remove_sql_and_backticks(sql_generated).replace("\n", " ").replace("\\", "")
         df = bq_connector.retrieve_df(sql_generated)
+        df = df.reset_index(drop=True)
         df2 = xgb_scorer.model_predictor(df.copy())
         response = f"The average churn prediction after the treatment changed from {round(100 * df2['prediction'].mean(), 2)}% to {round(100 * df2['new_prediction'].mean())}%."
         return response
@@ -368,8 +377,8 @@ def subset_clv_analysis(user_question:str, sql_generated:str,treatment_cost:floa
     -----
         - The output from this is the report. You have to display this report to the user as it is. DO NOT MODIFY THE OUTPUT.                
     """
-    st.markdown("---------------------------------------------")
-    st.info("CLV Analysis Tool is running")
+    st.markdown("--------------------------------------💡 *CLV Impact Analysis Tool* 💡--------------------------------------")
+
     try:
         # Execute the SQL query
         sql_generated=remove_sql_and_backticks(sql_generated)
@@ -378,6 +387,7 @@ def subset_clv_analysis(user_question:str, sql_generated:str,treatment_cost:floa
 
         ##Get the subset data from bigquery
         df = bq_connector.retrieve_df(sql_generated)
+        df=df.reset_index(drop=True)
         df['current_revenue']=df['monthlyrevenue']*12
         #df['current_clv']=(df['monthlyrevenue']*12*df['prediction'])/(1+0.09-df['prediction'])
         df['current_clv'] = (df['monthlyrevenue'] * 12 * (1 - df['prediction'])) / (0.09 + df['prediction'])
@@ -439,8 +449,8 @@ def model_stat(user_question:str):
     Note:
     - Unless specified by the user always use test data validation stats for model stats explanation
     """
-    st.markdown("---------------------------------------------")
-    st.info("Model Stats Tool is running")
+    st.markdown("--------------------------------------📈 *Model Stats Tool* 📈--------------------------------------")
+
     try:
         note= "\nNote:\n- Unless specified by the user always use test data validation stats for model stats explanation"
         with open(model_config['model']['model_stats'], 'r') as file:
@@ -466,8 +476,8 @@ def generate_visualizations(user_question: str, generated_sql: str):
     - Generates two charts with elements "chart-div" and "chart-div-1".
     """
 
-    st.markdown("---------------------------------------------")
-    st.info("Generating Visualizations...")
+    st.markdown("--------------------------------------📉 *Visualization Tool* 📉--------------------------------------")
+
     try:
         normalized_question = normalize_string(user_question)
         generated_sql = generated_sql.replace("\n", " ").replace("\\", "")
@@ -550,8 +560,7 @@ def question_reformer(user_question:str):
     str
         A string containing the reformulated user questions
     """
-    st.markdown("---------------------------------------------")
-    st.info("Question Reformer is running")
+    st.markdown("--------------------------------------🔄 *Processing Input* 🔄--------------------------------------")
     try:
         reformed_question=task_master.ask_taskmaster(user_question)
         #reformed_question=response.candidates[0].content.parts[0].text
@@ -593,8 +602,8 @@ def subset_shap_summary(customer_data_sql_query:str,shap_data_sql_query:str,user
         - The output from this is the report. You have to display this report to the user as it is. DO NOT MODIFY THE OUTPUT.
         - Add a final note after the report of how nd why the recommended actions should be tested with churn adn clv impact analysis.
 """
-    st.markdown("---------------------------------------------")
-    st.info("Subset Churn Summary Tool is running")
+    st.markdown("--------------------------------------🔍 *Subset Churn Analysis Tool* 🔍--------------------------------------")
+
     try:
         customer_data_sql_query=remove_sql_and_backticks(customer_data_sql_query)
         customer_data_sql_query=customer_data_sql_query.replace("\\", "")
@@ -617,11 +626,14 @@ def subset_shap_summary(customer_data_sql_query:str,shap_data_sql_query:str,user
         df_data=df_data.sort_values(by='customerid')
         df_shap_data=df_shap_data.sort_values(by='customerid')
 
+        ##Addtional check to ensure both dataframes have same number of records
+        df_shap_data=pd.merge(df_shap_data,df_data[['customerid']],on='customerid',how='inner')
+
         def sigmoid(x):
             """ Sigmoid function to convert log-odds to probabilities. """
             return 1 / (1 + np.exp(-x))
         
-        base_value=1.0    
+        print(base_value)
         base_probability = sigmoid(base_value)
         results = []
         feature_importances = {}
@@ -645,23 +657,46 @@ def subset_shap_summary(customer_data_sql_query:str,shap_data_sql_query:str,user
 
 
         importance_df = pd.DataFrame(list(feature_importances.items()), columns=['Feature', 'Importance'])
-        print(importance_df.head())
         importance_df.sort_values('Importance', ascending=False, inplace=True)
         importance_df['Rank'] = range(1, len(importance_df) + 1)
         importance_ranks = importance_df.set_index('Feature')['Rank'].to_dict()
         #print(2)
 
+        if df_data.shape[0]>10000:
+            subset_levels=10
+        elif df_data.shape[0]>5000:
+            subset_levels=5
+        elif df_data.shape[0]>1000:
+            subset_levels=3
+        else:
+            subset_levels=2
+
+
+        ##Making sure index is reset for both dataframes
+        df_shap_data=df_shap_data.reset_index(drop=True)
+        df_data=df_data.reset_index(drop=True)
+        
         for feature in common_columns:
             feature_values = df_data[feature]
             feature_shap_values = df_shap_data[feature]
             df = pd.DataFrame({feature: feature_values, 'SHAP Value': feature_shap_values})
             numeric_features = df_data.select_dtypes(include=['number']).columns
 
+            
             if feature in numeric_features:
-                df['Group'] = pd.qcut(df[feature], 5, duplicates='drop')
+                # Equal sized bins take out SHAP patterns as we get in SHAP PDP
+                #df['Group'] = pd.qcut(df[feature], subset_levels, duplicates='drop')
+                # Equal length buckets are used instead
+                min_val = df[feature].min()
+                max_val = df[feature].max()
+                range_width = max_val - min_val
+                bin_edges = np.linspace(min_val - 0.01 * range_width, max_val + 0.01 * range_width, subset_levels + 1)
+                #print(feature)
+                df['Group'] = pd.cut(df[feature], subset_levels)
             else:
                 df['Group'] = df[feature]
 
+            
             group_avg = df.groupby('Group', observed=True).agg({
                 'SHAP Value': 'mean',
                 feature: 'count'
@@ -676,16 +711,39 @@ def subset_shap_summary(customer_data_sql_query:str,shap_data_sql_query:str,user
             results.append(group_avg)
         
         result_df = pd.concat(results, ignore_index=True)
-        ##Count of groups should be atleast 50 records - If not remove the group
-        result_df = result_df[result_df['Count'] >= 50]
-        result_df.sort_values(['Importance Rank', 'Probability Change (%)'], ascending=[True, False], inplace=True)
-        result_df=result_df[result_df['Importance Rank']<=10]
-        #print(tabulate.tabulate(result_df[['Feature','Group','Probability Change (%)','SHAP Value','Importance Rank']].head(30), headers='keys', tablefmt='pipe', showindex='never'))
+        print(result_df.shape)
 
-        report=churn_explainer.ask_churnoracle(shap_summary=f"""The SHAP summary from the model is: 
-        {tabulate.tabulate(result_df[['Feature','Group','Probability Change (%)','SHAP Value','Importance Rank']], headers='keys', tablefmt='pipe', showindex='never')}""",
+        if df_data.shape[0] > 1000:
+            ##Count of groups should be atleast 50 records - If not remove the group
+            result_df = result_df[result_df['Count'] >= 50]
+            result_df.sort_values(['Importance Rank','SHAP Value', 'Probability Change (%)'], ascending=[True,False, False], inplace=True)
+               
+        copy=result_df[['Feature','Group','SHAP Value','Adjusted Probability','Probability Change (%)','Feature Importance','Importance Rank','Count']].copy()
+        # result_df=result_df[result_df['Importance Rank']<=10]
+        #result_df = result_df.head(100)
+        #print(tabulate.tabulate(result_df[['Feature','Group','Probability Change (%)','SHAP Value','Importance Rank']].head(30), headers='keys', tablefmt='pipe', showindex='never'))
+        ##Limit Data with positive SHAP contributions only
+        result_df = result_df[result_df['SHAP Value'] > 0]
+        result_df=result_df[result_df['Importance Rank']<=25]
+        print(result_df.shape)
+
+
+        report=churn_explainer.ask_churnoracle(shap_summary=f"""The total count of customers in this analysis is {df_data.shape[0]}.The SHAP summary from the model is: 
+        {tabulate.tabulate(result_df[['Feature','Group','SHAP Value','Probability Change (%)','Importance Rank']], headers='keys', tablefmt='pipe', showindex='never')}""",
         user_question=user_question)
-        #print(report)
+
+        # Save intermediate result
+        normalized_question=normalize_string(user_question)
+        if 'intermediate_results' not in st.session_state:
+            st.session_state.intermediate_results = {}
+        if normalized_question not in st.session_state.intermediate_results:
+            st.session_state.intermediate_results[normalized_question] = []
+        st.session_state.intermediate_results[normalized_question].append({
+            "tool": "subset_shap_explanation",
+            "result_df": copy
+        })
+
+
         return report
     except Exception as e:
         return str(e)
@@ -710,8 +768,8 @@ def customer_recommendations(user_question:str, customer_data_query:str,counterf
     str
         A report on recommended actions to reduce the customer churn. You have to display this report to the user.
     """
-    st.markdown("---------------------------------------------")
-    st.info("Customer Recommendations Tool is running")
+    st.markdown("--------------------------------------💬 *Customer Recommendations Tool* 💬--------------------------------------")
+
     try:
         # Execute the SQL query
         customer_data_query=remove_sql_and_backticks(customer_data_query)
@@ -991,18 +1049,28 @@ if "intermediate_results" not in st.session_state:
     st.session_state.intermediate_results = {}
 
 
+
 # Function to handle new user input and get response from the model
 def handle_user_input(prompt):
     # Display user's message
     st.chat_message("user").markdown(prompt)
+
     with st.spinner("Processing..."):
         # Send user entry to Gemini and get the response
         response = st.session_state.chat.send_message(prompt)
-        response_text = response.candidates[0].content.parts[0].text
-    
-    # Display model's response
-    with st.chat_message("assistant"):
-        st.write(response_text)
+        # Assuming response.candidates[0].content.parts is a list of text parts
+        parts = response.candidates[0].content.parts[0].text
+
+    # Placeholder for the assistant's response
+    response_container = st.chat_message("assistant")
+    response_placeholder = response_container.empty()
+    response_text = ""
+
+    # Simulate streaming each character
+    for char in parts:
+        response_text += char
+        response_placeholder.markdown(response_text)
+        time.sleep(0.005)  # Simulate streaming delay for demonstration purposes
 
     
 

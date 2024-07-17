@@ -74,24 +74,36 @@ class ShapOracle(ABC):
         prompt = f"""
 
             You are an intelligent agent that analyzes SHAP summary data to identify reasons for customer churn and suggest possible next actions to reduce churn. 
-            Your goal is to create a detailed report that highlights key insights and provides actionable recommendations based on the data.
+            Your goal is to create a detailed report that highlights key insights on mian reasons for churn and provides actionable recommendations based on the SHAP data.
+
+            *Higher the SHAP value (more positive it is), the more the feature pushes prediction towards churn and vice-versa*
+
             Your task is as below:-
 
                 1. Read and Analyze the Data:
                     - Understand the structure of the provided SHAP data.
-                    - Focus on the features, groups, probability changes, SHAP values, and importance ranks.
+                    - Focus on the features, groups,SHAP values.
+                    - *Higher the SHAP value (more positive it is), the more the feature pushes prediction towards churn*
+                    - Probability change % shows the % increase in churn by this group compared to baseline model
+                    - Understand clearly which features and which groups within the features have the highest SHAP values.
                 2. Identify Key Insights:
                     - Determine which features have the highest positive impact on churn.Use SHAP values and probability changes for this.
-                    - Ignore features with negative SHAP values or decrease churn as they are not contributing to churn. Use them only for comparison within feature group of high churn contribution.
-                    - Rank these features based on their importance and SHAP values.
-                    - For each feature understand which groups contribute most to churn.
-                    - Identify the most significant groups within each feature.
+                    - *Higher the SHAP value (more positive it is), the more the feature pushes prediction towards churn*
+                    - Provide extra attention to the sign of the SHAP value. Positive SHAP value indicates higher churn probability and vice-versa.
+                    - DO NOT take negative SHAP valued groups as higher churn probability groups. That is a fatal error.
+                    - Idenitifying wrong trends/insights will lead to wrong recommendations. This is a fatal error and should be avoided at all costs.
+                    - Identify as much insights as possible from the SHAP summary data.
+                    - If you identify a group within a feature have high SHAP value, identify the trend of churn comparing to other groups in the feature. This is important to understand the impact of the group in the feature.
+                    - Make sure the trend you are reporting is accurate.
                     - When explaining a numeric feature with its ranges in Group, explain which range have higher churn and which range have lower churn
                     - DO NOT randmoly say a group in a feature has higher churn. You should explain how much higher churn it has compared to other groups in the feature.
+                    - Always check if there is another group in the feature that has higher churn than the group you are reporting.
+                    - If you report a group have higher churn contribution than another group in the feature, but the SHAP data shows otherwise it is a FATAL error
                 3. Provide Reasons for Churn:
                     - Clearly articulate the reasons for churn based on the data analysis.
+                    - *Higher the SHAP value (more positive it is), the more the feature pushes prediction towards churn*
+                    - Provide as much reasons with justifiable evidence from the SHAP summary data.
                     - Explain how different groups within each feature contribute to the overall churn probability.
-                    - Support your findings with evidence from the SHAP summary with probability changes.
                 4. Suggest Next Actions:
                     - Based on the insights, recommend specific actions to reduce churn.
                     - Consider both immediate and long-term strategies.
@@ -101,23 +113,30 @@ class ShapOracle(ABC):
                     - Reinforce the importance of targeted actions to reduce churn.
 
             **NOTES:
-            - Use 'Probability Change (%)'to get a churn contribution in probability scale which is more readable to user 
+             - Use 'Probability Change (%)'to get a churn contribution in probability scale which is more readable to user 
                 - Higher the value (more positive it is), the more the feature pushes the model output towards churn
                 - Lower the value (more negative it is), the more the feature prevents churn
                     eg: If a feature has a probability change of 3.2, it means that the churn probability increases by 3.2% due to that feature compared to base model.
                     eg: If a feature has a probability change of -2.5, it means that the churn probability decreases by 2.5% due to that feature compared to base model..
-            - 'Importance Rank' shows the importance of the feature in model predictions; a lower rank means higher importance.
             - **SHAP Value : 
-                - Higher the SHAP value (more positive it is), the more the feature pushes the model output towards churn
+                - *Higher the SHAP value (more positive it is), the more the feature pushes prediction towards churn*
                 - Lower the SHAP value (more negative it is), the more the feature prevents churn
-            - Ignore features with negative SHAP values as they are not contributing to churn. Use them only for comparison.
+            - If you report a group have higher churn contribution than another within feature, but the SHAP data shows otherwise it is a FATAL error
+            - Always make the report grounded with SHAP summary data. If you identify a trend that is not supported by SHAP data, it is a FATAL error
+                For example if SHAP value for x1,x2,x3,x4,x5 is 0.6,-0.1,-0.2,0.1,0.2 the report should state:-
+                  - x1 is highest contributor of churn as by model 
+                  - There is also trend in increasing churn with x4 and x5 but it is lower than than x1
             - 'Group' refers to different sub groups within a feature.  
             - *Insights generated for each groups should be grounded with supporting facts from summary*
             - DO NOT using words like The negative impact, negative SHAP Value etc. Use words like higher churn probability, higher churn contribution etc.
             - When explaining a numeric feature with its ranges in Group, explain which range have higher churn and which range have lower churn
             - THE STATS BEHIND CHURN REASONS SHOULD BE GROUNDED IN THE SHAP SUMMARY DATA. DO NOT MAKE UP REASONS FOR CHURN.
             - Probability Change (%) is already in percentage scale. No need to convert it to percentage scale.                  
-
+            - 'Importance Rank' shows the importance of the feature in model predictions; a lower rank means higher importance.
+            - 'Importance Rank' has no place in Churn analysis. Use SHAP values and Probability Change (%) for analysis.
+            -  Importance Rank is not a measure of churn contribution. It specifies which features are more important for the model to make predictions.
+            -  You may use Importance rank to answer any questions related to feature importance in the model. However, it is not relevant for churn analysis. 
+            - When you make the final report try to make it non technical in wording as possible
 
             Below is the SHAP summary data you need to analyze:
             {shap_summary}
@@ -129,15 +148,17 @@ class ShapOracle(ABC):
 
             1. Overview:
                 - Brief summary of the report and what the report is for.
+                - Mention the count of customers this report is based on.
             2. Key Insights:
-                - List the top features contributing to churn and summarize their impact
+                - List the top features contributing to churn and summarize their impact. Provide atleast 6 key insights.
             3. Reasons for Churn:
                 - Detailed explanation of the reasons for churn based on the data analysis
             4. Next Actions:
                 - Specific recommendations to reduce churn and target customer segments
             5. Conclusion:
                 - Final thoughts and summary of the report 
-                - Add a note to use Churn and CLV impact analysis first to understand approximate impact of potential actions you may take from this report                          
+                - Add a note to use Churn and CLV impact analysis first to understand approximate impact of potential actions you may take from this report
+                - Add a note at the end of report that these findings are based on the model and may not be accurate in real world. You should do more detailed analysis on every insights. I can help you with that if you want, just tell me what to do.                         
             """
         shap_action = self.churnexplainer.generate_content(prompt, stream=False)
         return shap_action.candidates[0].content.parts[0].text

@@ -272,7 +272,9 @@ class BuildSQLAgent(Agent, ABC):
 
 
         NOTE: 
-        ** Use customer_counterfactual_recommendations only if the question is about a specific individual customer
+        ** Use customer_counterfactual_recommendations only if the question is about a specific individual customer recommendation. Using it for any other purpose will result in fatal errors.
+        ** Never use counterfactuals table for churn reasoning for a subset. Doing so will result in fatal errors
+        ** Counterfactuals table should only be used for individual customer recommendations or individual customer actions.
         ** For churn impact and CLV analysis always return all columns in dataset. Use select *, followed by modified columns.
         """
         
