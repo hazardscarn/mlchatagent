@@ -1,0 +1,309 @@
+﻿prompt,sql,database_name
+What is the average monthly charges for customers who have churned?,"SELECT AVG(monthlyrevenue) AS average_monthly_charges
+FROM `mlchatagent-429005.telecom_churn.customer_data`
+WHERE churn = 1;",telecom_churn
+"Get all the SHAP data of customers with income group less than 2
+    filter by income group less than 2
+    select all columns","SELECT t1.* FROM mlchatagent-429005.telecom_churn.customer_shap_data t1 join 
+`mlchatagent-429005.telecom_churn.customer_data` t2 on t1.customerid=t2.customerid
+ WHERE t2.incomegroup < 2",telecom_churn
+Tell me about who customerID 3114822?,"SELECT *
+FROM `mlchatagent-429005.telecom_churn.customer_data`
+WHERE customerid = 3114822;",telecom_churn
+Tell me SHAP contribution of customerID 3114822?,"SELECT *
+FROM `mlchatagent-429005.telecom_churn.customer_shap_data`
+WHERE customerid = 3114822;",telecom_churn
+Get the data of customerID 3114822?,"SELECT *
+FROM `mlchatagent-429005.telecom_churn.customer_data`
+WHERE customerid = 3114822;",telecom_churn
+Explain to me the contribution towards churn prediction of customerID 3114822?,"SELECT *
+FROM `mlchatagent-429005.telecom_churn.customer_shap_data`
+WHERE customerid = 3114822;",telecom_churn
+Explain to me the main reasons for churn of customerID 3114822?,"SELECT *
+FROM `mlchatagent-429005.telecom_churn.customer_shap_data`
+WHERE customerid = 3114822;",telecom_churn
+Tell me some action recommendations for customerID 3334558?,"SELECT *
+FROM `mlchatagent-429005.telecom_churn.customer_counterfactual_recommendations`
+WHERE customerid = 3334558;",telecom_churn
+What are some actions that can be performed to reduce churn probability for customerID 3334558?,"SELECT *
+FROM `mlchatagent-429005.telecom_churn.customer_counterfactual_recommendations`
+WHERE customerid = 3334558;",telecom_churn
+What is the average monthly revenue and churn rate for each service city?,"SELECT 
+    service_city,
+    AVG(monthlyrevenue) AS avg_monthly_revenue,
+    AVG(churn) AS churn_rate
+FROM 
+    `mlchatagent-429005.telecom_churn.customer_data`
+GROUP BY 
+    service_city;",telecom_churn
+Which customers have the highest SHAP contributions for revenue and what are their respective ages and service cities?,"SELECT 
+    cd.customerid,
+    cd.agehh1,
+    cd.service_city,
+    cd.revenue_per_minute,
+   csc.shapvalue_revenue_per_minute 
+FROM 
+    `mlchatagent-429005.telecom_churn.customer_data` cd
+JOIN 
+    `mlchatagent-429005.telecom_churn.customer_shap_data` csc
+ON 
+    cd.customerid = csc.customerid
+ORDER BY 
+    csc.shapvalue_revenue_per_minute DESC
+LIMIT 10;",telecom_churn
+What is the total number of inbound calls for customers who have been in service for more than 12 months and have a high credit rating,"SELECT 
+    SUM(inboundcalls) AS total_inbound_calls
+FROM 
+    `mlchatagent-429005.telecom_churn.customer_data`
+WHERE 
+    monthsinservice > 12 AND creditrating  in ('2-high','1-highest');",telecom_churn
+"What are the top 5 cities with the highest average call duration, and what is the corresponding average call duration?","
+SELECT 
+    service_city,
+    AVG(avg_call_duration) AS avg_call_duration
+FROM 
+    `mlchatagent-429005.telecom_churn.customer_data`
+GROUP BY 
+    service_city
+ORDER BY 
+    avg_call_duration DESC
+LIMIT 5;",telecom_churn
+How many customers have at least one child in their household and have opted out of mailings?,"SELECT 
+    COUNT(*) AS customer_count
+FROM 
+    `mlchatagent-429005.telecom_churn.customer_data`
+WHERE 
+    childreninhh = TRUE AND optoutmailings = TRUE;",telecom_churn
+What is the distribution of handset prices for customers who own a computer and have a high income or incomegroup above 7?,"SELECT 
+    handsetprice,
+    COUNT(*) AS count
+FROM 
+    `mlchatagent-429005.telecom_churn.customer_data`
+WHERE 
+    ownscomputer = TRUE AND incomegroup>=7
+GROUP BY 
+    handsetprice
+ORDER BY 
+    handsetprice;",telecom_churn
+What is the correlation between the number of referrals made by a subscriber and their revenue per minute?,"SELECT 
+    CORR(referralsmadebysubscriber, revenue_per_minute) AS correlation
+FROM 
+    `mlchatagent-429005.telecom_churn.customer_data`;",telecom_churn
+Identify customers who have high SHAP values for credit rating and high monthly revenue but have low tenure. What are their details?,"SELECT 
+    cd.*,
+    csc.shapvalue_creditrating,
+    csc.shapvalue_monthlyrevenue
+FROM 
+    `mlchatagent-429005.telecom_churn.customer_data` cd
+JOIN 
+    `mlchatagent-429005.telecom_churn.customer_shap_data` csc
+ON 
+    cd.customerid = csc.customerid
+WHERE 
+    csc.shapvalue_creditrating > 0.1 AND csc.shapvalue_monthlyrevenue > 0.1 AND cd.service_tenure < 12;",telecom_churn
+What is the average revenue per minute for customers who have made at least one call to the retention team and have accepted retention offers?,"SELECT 
+    AVG(revenue_per_minute) AS avg_revenue_per_minute
+FROM 
+    `mlchatagent-429005.telecom_churn.customer_data`
+WHERE 
+    madecalltoretentionteam = TRUE AND retentionoffersaccepted > 0;",telecom_churn
+What are the key differences in usage patterns between customers who churned and those who did not,"SELECT 
+    churn,
+    AVG(avg_call_duration) AS avg_call_duration,
+    AVG(monthlyminutes) AS avg_monthly_minutes,
+    AVG(monthlyrevenue) AS avg_monthly_revenue,
+    AVG(service_tenure) AS avg_tenure
+FROM 
+    `mlchatagent-429005.telecom_churn.customer_data`
+GROUP BY 
+    churn;",telecom_churn
+Idenitify customers with high monthly revenue (above 80th percentile is high),"-- Step 1: Calculate the 80th percentile of monthlyrevenue
+WITH percentile_80 AS (
+  SELECT 
+    APPROX_QUANTILES(monthlyrevenue, 100)[OFFSET(80)] AS revenue_80th_percentile
+  FROM 
+    `mlchatagent-429005.telecom_churn.customer_data`
+)
+
+-- Step 2: Filter and classify high revenue customers based on the 80th percentile
+SELECT 
+    cd.*,
+    'High Revenue' AS revenue_classification
+FROM 
+    `mlchatagent-429005.telecom_churn.customer_data` cd,
+    percentile_80 p
+WHERE 
+    cd.monthlyrevenue >= p.revenue_80th_percentile;",telecom_churn
+Identify the top factors (SHAP values) contributing to churn for customers with high monthly revenue.,"
+WITH percentile_80 AS (
+  SELECT 
+    APPROX_QUANTILES(monthlyrevenue, 100)[OFFSET(80)] AS revenue_80th_percentile
+  FROM 
+    `mlchatagent-429005.telecom_churn.customer_data`
+),
+
+high_revenue_customers AS (
+  SELECT 
+    cd.customerid
+  FROM 
+    `mlchatagent-429005.telecom_churn.customer_data` cd,
+    percentile_80 p
+  WHERE 
+    cd.monthlyrevenue >= p.revenue_80th_percentile
+),
+hrc_shap as (
+SELECT 
+  csc.*
+FROM 
+  `mlchatagent-429005.telecom_churn.customer_shap_data` csc
+JOIN 
+  high_revenue_customers hrc
+ON 
+  csc.customerid = hrc.customerid
+JOIN 
+  `mlchatagent-429005.telecom_churn.customer_data` cd
+ON 
+  csc.customerid = cd.customerid
+)
+SELECT *
+FROM hrc_shap;
+",telecom_churn
+What is the relationship between tenure and churn rate for different income groups,"SELECT 
+    incomegroup,
+    AVG(service_tenure) as avg_service_tenure,
+    AVG(churn) AS churn_rate
+FROM 
+    `mlchatagent-429005.telecom_churn.customer_data`
+GROUP BY 
+    incomegroup
+ORDER BY 
+    incomegroup",telecom_churn
+Determine the impact of customer support interactions on churn by analyzing the number of customer care calls and churn rate.,"SELECT 
+    customercarecalls,
+    AVG(churn) AS churn_rate,
+    COUNT(*) AS customer_count
+FROM 
+    `mlchatagent-429005.telecom_churn.customer_data`
+GROUP BY 
+    customercarecalls
+ORDER BY 
+    customercarecalls;",telecom_churn
+Evaluate the churn rate and SHAP contributions for customers who own a motorcycle and have high monthly revenue.,"with exp as 
+(SELECT 
+    csc.*,
+    cd.churn
+    FROM 
+    `mlchatagent-429005.telecom_churn.customer_shap_data` csc
+JOIN 
+    `mlchatagent-429005.telecom_churn.customer_data` cd
+ON 
+    csc.customerid = cd.customerid
+WHERE 
+    cd.ownsmotorcycle = TRUE AND cd.monthlyrevenue > (SELECT AVG(monthlyrevenue) FROM `mlchatagent-429005.telecom_churn.customer_data`)
+)
+SELECT *
+FROM exp;",telecom_churn
+Explain to me the main reasons for churn of customerID 3334558? Also explain what are the recommended actions to reduce churn for this customer,"SELECT 
+    csd.*, 
+    ccr.changes
+FROM `mlchatagent-429005.telecom_churn.customer_shap_data` csd
+LEFT JOIN `mlchatagent-429005.telecom_churn.customer_counterfactual_recommendations` ccr
+ON csd.customerid = ccr.customerid
+WHERE csd.customerid = 3334558;",telecom_churn
+What would be impact of churn if the revenue per minute is decresed by 5c for customers with revenue per minute more than 1$,"select * from `mlchatagent-429005.telecom_churn.customer_data`
+where revenue_per_minute>1",telecom_churn
+How would the Lifetime Value aka CLV change if the revenue per minute is decresed by 5c for customers with revenue per minute more than 1$ for customers in houston,"select *,(revenue_per_minute-0.05) as revenue_per_minute from `mlchatagent-429005.telecom_churn.customer_data`
+where revenue_per_minute>1 and service_city in ('hou')",telecom_churn
+What are the main reasons for churn for customers with Chidren and are home Owners,"with exp as 
+(SELECT 
+    csc.*,
+    cd.churn
+    FROM 
+    `mlchatagent-429005.telecom_churn.customer_shap_data` csc
+JOIN 
+    `mlchatagent-429005.telecom_churn.customer_data` cd
+ON 
+    csc.customerid = cd.customerid
+WHERE 
+    cd.childreninhh = True
+    AND cd.homeownership = 'known'
+)
+
+SELECT * 
+FROM exp;",telecom_churn
+What would be impact of churn if  new equipment is provided for customers with currentequipmentdays more than 600 days,"select *,(30) as currentequipmentdays from `mlchatagent-429005.telecom_churn.customer_data`
+where currentequipmentdays>600",telecom_churn
+What would be change in CLV if monthlyrevenue is cut by 5 percent for customers with high churn probability,"select *,(monthlyrevenue-monthlyrevenue*0.05) as monthlyrevenue from `mlchatagent-429005.telecom_churn.customer_data`
+where prediction>0.7",telecom_churn
+get the data of customers with overageminutes more than 50,"select * from `mlchatagent-429005.telecom_churn.customer_data`
+where overageminutes>50",telecom_churn
+what is churn pattern for customers with overage minutes more than 50,"select * from `mlchatagent-429005.telecom_churn.customer_shap_data` t1
+join `mlchatagent-429005.telecom_churn.customer_data` t2
+on t1.customerid=t2.customerid
+where t2.overageminutes>50",telecom_churn
+get the data of customers with occupation as homemaker,"select * from `mlchatagent-429005.telecom_churn.customer_data`
+where occupation='homemaker'",telecom_churn
+what are the different occupations customers have,select distinct occupation from `mlchatagent-429005.telecom_churn.customer_data`,telecom_churn
+what are the different credit ratings  customers have,select distinct creditrating from `mlchatagent-429005.telecom_churn.customer_data`,telecom_churn
+what is distribution of creditrating among customers and their average churn rates,"
+select  creditrating,count(*) as number_of_customers,AVG(churn) as avg_churn
+from `mlchatagent-429005.telecom_churn.customer_data`
+group by 1",telecom_churn
+get me data of customers who have drastic change in minutes used,"
+select * from `mlchatagent-429005.telecom_churn.customer_data`
+where percchangeminutes< -100",telecom_churn
+Create 10 buckets for current equipment age. Provide a plot of equipment age buckets and average churn rate,"WITH data AS (
+  SELECT 
+    currentequipmentdays,
+    churn,
+    NTILE(10) OVER (ORDER BY currentequipmentdays) AS current_equipment_age_bucket,
+  FROM 
+    `mlchatagent-429005.telecom_churn.customer_data`
+),
+buckets AS (
+  SELECT 
+    SAFE_CAST(current_equipment_age_bucket AS BIGNUMERIC) AS current_equipment_age_bucket,
+    SAFE_CAST(MIN(currentequipmentdays) OVER (PARTITION BY current_equipment_age_bucket) AS BIGNUMERIC) AS current_equipment_age_bucket_min,
+    SAFE_CAST(MAX(currentequipmentdays) OVER (PARTITION BY current_equipment_age_bucket) AS BIGNUMERIC) AS current_equipment_age_bucket_max,
+churn
+  FROM 
+    data
+)
+SELECT 
+  current_equipment_age_bucket,
+  current_equipment_age_bucket_min,
+  current_equipment_age_bucket_max,
+  avg(churn) as avg_churn
+FROM 
+  buckets
+GROUP BY 
+  current_equipment_age_bucket,
+  current_equipment_age_bucket_min,
+  current_equipment_age_bucket_max",telecom_churn
+create buckets of customer equipment age. Then calculate average churn and average predicted churn across the buckets and provide me a visual,"SELECT CASE WHEN currentequipmentdays <= 180 THEN '0-180 days' WHEN currentequipmentdays BETWEEN 181 AND 365 THEN '181-365 days' WHEN currentequipmentdays BETWEEN 366 AND 547 THEN '366-547 days' WHEN currentequipmentdays BETWEEN 548 AND 730 THEN '548-730 days' ELSE '730+ days' END AS equipment_age_bucket, AVG(churn) AS avg_churn, AVG(prediction) AS avg_predicted_churn FROM mlchatagent-429005.telecom_churn.customer_data GROUP BY 1",telecom_churn
+create buckets of months in service . Then calculate average churn and average predicted churn across the buckets and provide me a visual,"SELECT t1.monthsinservice_bucket, AVG(t1.churn) AS avg_churn, AVG(t1.prediction) AS avg_predicted_churn FROM ( SELECT t.monthsinservice, t.churn, t.prediction, CASE WHEN t.monthsinservice BETWEEN 0 AND 12 THEN '0-12 Months' WHEN t.monthsinservice BETWEEN 13 AND 24 THEN '13-24 Months' WHEN t.monthsinservice BETWEEN 25 AND 36 THEN '25-36 Months' WHEN t.monthsinservice BETWEEN 37 AND 48 THEN '37-48 Months' ELSE '48+ Months' END AS monthsinservice_bucket FROM mlchatagent-429005.telecom_churn.customer_data AS t ) AS t1 GROUP BY 1 ORDER BY t1.monthsinservice_bucket",telecom_churn
+Provide me a visual of average churn rate and average predicted churn rate across different service city. Do this for onlly serice cities with atleast 50 customers,"SELECT service_city, AVG(churn) AS avg_churn_rate, AVG(prediction) AS avg_predicted_churn_rate FROM mlchatagent-429005.telecom_churn.customer_data GROUP BY service_city HAVING count(customerid) >= 50",telecom_churn
+"Get all the SHAP data of customers with with age more than 50
+    filter by with age more than 50
+    select all columns","SELECT t1.* FROM mlchatagent-429005.telecom_churn.customer_shap_data t1 join 
+`mlchatagent-429005.telecom_churn.customer_data` t2 on t1.customerid=t2.customerid
+ WHERE t2.agehh1 > 50",telecom_churn
+"Get all the SHAP data of customers with with equipment age more than 500 and have children at home
+    filter by with currentequipmentage more than 500, childreninhh is TRUE
+    select all columns","SELECT t1.* FROM mlchatagent-429005.telecom_churn.customer_shap_data t1 join 
+`mlchatagent-429005.telecom_churn.customer_data` t2 on t1.customerid=t2.customerid
+ WHERE t2.currentequipmentdays > 500 and t2.childreninhh=TRUE",telecom_churn
+"Get all the SHAP data of customers with revenue per minute more than 0.5 and credit rating in highest and high
+    filter by with  revenue per minute more than 0.5 , credit rating in highest and high
+    select all columns","SELECT t1.* FROM mlchatagent-429005.telecom_churn.customer_shap_data t1 join 
+`mlchatagent-429005.telecom_churn.customer_data` t2 on t1.customerid=t2.customerid
+ WHERE t2.revenue_per_minute>0.5 and t2.creditrating in ('1-highest','2-high')",telecom_churn
+What is the average age of customers who have higher churn because of revenue_per_minute?,"select avg(t1.agehh1) as avg_age, count(*) as count from `mlchatagent-429005.telecom_churn.customer_data` t1
+join 
+`mlchatagent-429005.telecom_churn.customer_shap_data` t2 on t1.customerid=t2.customerid
+ WHERE t2.shapvalue_revenue_per_minute >0.5",telecom_churn
+What is the  age distribution of customers who have higher churn because of revenue_per_minute?,"SELECT t1.age_bucket,AVG(t1.churn) AS avg_churn,AVG(t1.prediction) AS avg_predicted_churn FROM ( SELECT t.agehh1, t.churn, t.prediction, CASE WHEN t.agehh1 BETWEEN 0 AND 18 THEN '0-18 Years' WHEN t.agehh1 BETWEEN 19 AND 30 THEN '19-30 Years' WHEN t.agehh1 BETWEEN 30 AND 50 THEN '31 to 50 Years' WHEN t.agehh1 BETWEEN 50 AND 70 THEN '50-70 Years' ELSE '70+ Years' END AS age_bucket FROM mlchatagent-429005.telecom_churn.customer_data AS t ) AS t1 GROUP BY 1 ORDER BY t1.age_bucket",telecom_churn
+ What are the top 10 customers with highest churn probability?,"SELECT t1.customerid, t1.prediction AS churn_probability FROM mlchatagent-429005.telecom_churn.customer_dataAS t1 
+ORDER BY churn_probability DESC LIMIT 10",telecom_churn
+What is the churn probability distribution for customers with revenue_per_minute more than 0.5?,"SELECT t1.churn_probability_bucket, COUNT(t1.customerid) AS count, MIN(t1.prediction) AS churn_probability_bucket_min, MAX(t1.prediction) AS churn_probability_bucket_max FROM ( SELECT t.customerid, t.prediction, CASE WHEN t.prediction > 0.9 THEN '0.9-1' WHEN t.prediction BETWEEN 0.8 AND 0.9 THEN '0.8-0.9' WHEN t.prediction BETWEEN 0.7 AND 0.8 THEN '0.7-0.8' WHEN t.prediction BETWEEN 0.6 AND 0.7 THEN '0.6-0.7' WHEN t.prediction BETWEEN 0.5 AND 0.6 THEN '0.5-0.6' WHEN t.prediction BETWEEN 0.4 AND 0.5 THEN '0.4-0.5' WHEN t.prediction BETWEEN 0.3 AND 0.4 THEN '0.3-0.4' ELSE '0.3-' END AS churn_probability_bucket FROM `mlchatagent-429005.telecom_churn.customer_data` AS t WHERE t.revenue_per_minute > 0.5 ) AS t1 GROUP BY 1",telecom_churn
+Create a vizualization of churn probability distribution for customers with revenue_per_minute more than 0.5.,"SELECT t1.churn_probability_bucket, COUNT(t1.customerid) AS count, MIN(t1.prediction) AS churn_probability_bucket_min, MAX(t1.prediction) AS churn_probability_bucket_max FROM ( SELECT t.customerid, t.prediction, CASE WHEN t.prediction > 0.9 THEN '0.9-1' WHEN t.prediction BETWEEN 0.8 AND 0.9 THEN '0.8-0.9' WHEN t.prediction BETWEEN 0.7 AND 0.8 THEN '0.7-0.8' WHEN t.prediction BETWEEN 0.6 AND 0.7 THEN '0.6-0.7' WHEN t.prediction BETWEEN 0.5 AND 0.6 THEN '0.5-0.6' WHEN t.prediction BETWEEN 0.4 AND 0.5 THEN '0.4-0.5' WHEN t.prediction BETWEEN 0.3 AND 0.4 THEN '0.3-0.4' ELSE '0.3-' END AS churn_probability_bucket FROM `mlchatagent-429005.telecom_churn.customer_data` AS t WHERE t.revenue_per_minute > 0.5 ) AS t1 GROUP BY 1",telecom_churn
