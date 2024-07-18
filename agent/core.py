@@ -13,6 +13,10 @@
 # limitations under the License.
 
 
+#Copyright 2024 Google LLC
+#This agent was modified and built from the agent built by Google LLC in 2024
+#Licensed under the Apache License, Version 2.0 (the "License");
+
 """
 Provides the base class for all Agents 
 """

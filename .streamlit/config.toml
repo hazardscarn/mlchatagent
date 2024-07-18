@@ -1,0 +1,6 @@
+[theme]
+primaryColor = "#1f1f1f"                  # Dark primary color
+backgroundColor = "#0e0e0e"               # Dark background color
+secondaryBackgroundColor = "#262626"      # Dark secondary background color
+textColor = "#ffffff"                     # White text color for better visibility
+font = "sans serif"                       # Font setting (optional)

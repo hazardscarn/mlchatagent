@@ -58,6 +58,7 @@ model:
     test_size: 0.1
   histogram_model_location: "models//histogram_telchurn_basemodelv1.pkl"
   catboost_model_location: "models//catboost_telchurn_basemodelv1.pkl"
+  shapexplainer_model_location: "models//shapexplainer_v1.pkl"
   dice_model_location: "models//dice_basemodelv1.pkl"
   model_stats: 'models//model_stats.txt'
   train_category_levels:  'models//train_categories.json'
@@ -70,6 +71,7 @@ model:
   shap_summary: "results//tel_churn//shap_summary_df.csv"
   bq_import_data: "results//tel_churn//bq_dataset.csv"
   bq_import_shap_data: "results//tel_churn//bq_shap_dataset.csv"
+  shap_base_value: "results//tel_churn//shap_base_values.txt"
 dice:
   total_cfs: 10
   desired_class: 0

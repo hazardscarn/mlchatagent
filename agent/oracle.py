@@ -24,6 +24,8 @@ import yaml
 from google.cloud.exceptions import NotFound
 import google.generativeai as genai
 
+with open('./llm_configs.yml') as file:
+    conf = yaml.load(file, Loader=yaml.FullLoader)
 
 class ShapOracle(ABC):
     """ 
@@ -71,74 +73,16 @@ class ShapOracle(ABC):
         dict
             A report on reasons for churn.
         """
-        prompt = f"""
-
-            You are an intelligent agent that analyzes SHAP summary data to identify reasons for customer churn and suggest possible next actions to reduce churn. 
-            Your goal is to create a detailed report that highlights key insights and provides actionable recommendations based on the data.
-            Your task is as below:-
-
-                1. Read and Analyze the Data:
-                    - Understand the structure of the provided SHAP data.
-                    - Focus on the features, groups, probability changes, SHAP values, and importance ranks.
-                2. Identify Key Insights:
-                    - Determine which features have the highest positive impact on churn.Use SHAP values and probability changes for this.
-                    - Ignore features with negative SHAP values or decrease churn as they are not contributing to churn. Use them only for comparison within feature group of high churn contribution.
-                    - Rank these features based on their importance and SHAP values.
-                    - For each feature understand which groups contribute most to churn.
-                    - Identify the most significant groups within each feature.
-                    - When explaining a numeric feature with its ranges in Group, explain which range have higher churn and which range have lower churn
-                    - DO NOT randmoly say a group in a feature has higher churn. You should explain how much higher churn it has compared to other groups in the feature.
-                3. Provide Reasons for Churn:
-                    - Clearly articulate the reasons for churn based on the data analysis.
-                    - Explain how different groups within each feature contribute to the overall churn probability.
-                    - Support your findings with evidence from the SHAP summary with probability changes.
-                4. Suggest Next Actions:
-                    - Based on the insights, recommend specific actions to reduce churn.
-                    - Consider both immediate and long-term strategies.
-                    - Highlight which customer segments should be targeted for each action.
-                5. Generate a Detailed Report:
-                    - Summarize your findings in a clear and concise report.
-                    - Reinforce the importance of targeted actions to reduce churn.
-
-            **NOTES:
-            - Use 'Probability Change (%)'to get a churn contribution in probability scale which is more readable to user 
-                - Higher the value (more positive it is), the more the feature pushes the model output towards churn
-                - Lower the value (more negative it is), the more the feature prevents churn
-                    eg: If a feature has a probability change of 3.2, it means that the churn probability increases by 3.2% due to that feature compared to base model.
-                    eg: If a feature has a probability change of -2.5, it means that the churn probability decreases by 2.5% due to that feature compared to base model..
-            - 'Importance Rank' shows the importance of the feature in model predictions; a lower rank means higher importance.
-            - **SHAP Value : 
-                - Higher the SHAP value (more positive it is), the more the feature pushes the model output towards churn
-                - Lower the SHAP value (more negative it is), the more the feature prevents churn
-            - Ignore features with negative SHAP values as they are not contributing to churn. Use them only for comparison.
-            - 'Group' refers to different sub groups within a feature.  
-            - *Insights generated for each groups should be grounded with supporting facts from summary*
-            - DO NOT using words like The negative impact, negative SHAP Value etc. Use words like higher churn probability, higher churn contribution etc.
-            - When explaining a numeric feature with its ranges in Group, explain which range have higher churn and which range have lower churn
-            - THE STATS BEHIND CHURN REASONS SHOULD BE GROUNDED IN THE SHAP SUMMARY DATA. DO NOT MAKE UP REASONS FOR CHURN.
-            - Probability Change (%) is already in percentage scale. No need to convert it to percentage scale.                  
-
+        prompt = conf['churn_oracle']['prompt0']+f"""
 
             Below is the SHAP summary data you need to analyze:
             {shap_summary}
 
             Below is the original user question. Use it to identify the context of the report:
             {user_question}
-
-            Output format of report should be as below:
-
-            1. Overview:
-                - Brief summary of the report and what the report is for.
-            2. Key Insights:
-                - List the top features contributing to churn and summarize their impact
-            3. Reasons for Churn:
-                - Detailed explanation of the reasons for churn based on the data analysis
-            4. Next Actions:
-                - Specific recommendations to reduce churn and target customer segments
-            5. Conclusion:
-                - Final thoughts and summary of the report 
-                - Add a note to use Churn and CLV impact analysis first to understand approximate impact of potential actions you may take from this report                          
+                         
             """
+        prompt = prompt+ conf['churn_oracle']['prompt1']
         shap_action = self.churnexplainer.generate_content(prompt, stream=False)
         return shap_action.candidates[0].content.parts[0].text
     
@@ -268,31 +212,25 @@ class ShapOracle(ABC):
 
 
                 Below is the major contributing factors towards churn across portfolio:
-                ***Service City:**
-                        * **NMC, ATH, and SEW cities:**  These cities have the highest churn probability, with NMC experiencing a 1.15% increase in churn probability compared to the base model. This indicates that customers in these cities are significantly more likely to churn. 
-                        * **LAU, MIL, OMA, VAH, NOR:** These cities also contribute to churn but have a lower churn probability than the top 3 cities. For instance, LAU has a churn probability increase of 0.59%.
-                        * **Other cities:** Several other cities show a lower churn probability than the top 3, including 'LOU', 'OHH', 'SDA', 'NNY', 'IPM', and 'DET'.  Cities like 'STL', 'SFR', 'PIT', 'CHI', 'MIN', 'BOS', 'NOL', 'SHE', 'NSH', 'HWI', 'PHX', 'FLN', 'HAR', 'KCY', 'APC', 'DAL', 'OHI', 'SAN', 'NMX', 'PHI', 'SLC', 'DEN', 'HOU', 'IND', 'MIA', 'GCW', 'LAW', 'INH', 'BIR', 'SFU', 'UNKNOWN', and 'NVU' are associated with even lower churn probabilities. 
-                    ***Current Equipment Days:**
-                        * **(-3.001, 86.0], (720.2, 1794.0]**: These ranges demonstrate the highest contribution to churn, potentially indicating a dissatisfaction with equipment, leading to churn. The range (-3.001, 86.0] shows a -1.47% decrease in churn probability, and the range (720.2, 1794.0] shows a -1.35% decrease in churn probability. 
-                        * **(86.0, 183.0], (224.0, 278.0]**: These ranges show a relatively lower contribution to churn compared to the higher ranges. 
-                        * **(278.0, 324.0], (324.0, 376.0], (183.0, 224.0], (376.0, 447.0], (447.0, 566.0], (566.0, 720.2]:** These ranges show even lower contribution to churn compared to the previous ranges. 
-                    ***Months in Service:**
-                        * **(10.0, 12.0]**: This range shows the highest contribution to churn, with a 0.17% probability increase. This suggests that customers who have been with the company for 10 to 12 months are more likely to churn.
-                        * **(14.0, 16.0]**: This range shows a lower but still positive contribution to churn. 
-                        * **(26.0, 33.0]**: This range shows a lower contribution to churn than the previous ranges. 
-                        * **(16.0, 19.0]**: This range shows a small contribution to churn.
-                        * **(12.0, 14.0]**: This range shows a very low contribution to churn. 
-                        * **(5.999, 8.0], (22.0, 26.0], (19.0, 22.0], (8.0, 10.0], (33.0, 59.0]:** These ranges show a negative contribution to churn, indicating that customers in these ranges are less likely to churn compared to other groups.
-                    ***Total Recurring Charge:**
-                        * **(30.0, 33.0]**: This range has the highest contribution to churn, with a 0.28% increase in churn probability. This suggests that customers with a recurring charge in this range are more likely to churn.
-                        * **(-9.001, 17.0]**: This range has a lower but still positive contribution to churn.
-                        * **(75.0, 400.0]**: This range shows a negative contribution to churn. 
-                        * **(40.0, 45.0], (55.0, 60.0], (45.0, 50.0], (17.0, 30.0], (33.0, 40.0], (60.0, 75.0], (50.0, 55.0]:** These ranges show a negative contribution to churn, implying that customers within these ranges are less likely to churn.
-                    ***Credit Rating:**
-                        * **6-verylow:** This group exhibits the highest contribution to churn, with a 0.30% probability increase. This suggests financial constraints might be impacting the churn decision of these customers.
-                        * **7-lowest:** This group has a negative contribution to churn.
-                        * **1-highest:** This group also has a negative contribution to churn.
-                        * **5-low, 2-high, 4-medium, 3-good:** These groups show a negative contribution to churn, implying that customers with these credit ratings are less likely to churn compared to other groups. 
+                ### Insights and Analysis:
+
+                1. **Current Equipment Days**:
+                - Customers with longer current equipment days (in the range of 1085.2 to 1630.3 days) have a significantly higher churn probability, with a probability change of 12.69% to 12.23% compared to the baseline model. This indicates that customers who have been using their equipment for a longer duration might be more likely to churn.
+
+                2. **Percentage Change in Minutes**:
+                - A significant negative change in minutes usage (in the range of -2061.6 to -1154.9) is strongly associated with higher churn probability, with a probability change of 13.03%. This suggests that customers who significantly reduce their minutes usage might be experiencing dissatisfaction and are more likely to churn.
+
+                3. **Service City**:
+                - Customers in "inh" and "slc" cities have the highest churn probability, with a probability change of 8.47% and 8.20%, respectively. This implies that there might be specific challenges or factors in these locations contributing to higher churn rates.
+
+                4. **Revenue per Minute**:
+                - Customers with higher revenue per minute (in the range of 44.65 to 61.59) have a higher churn probability, with a probability change of 11.29%. This could be linked to price sensitivity among high-revenue users or potential dissatisfaction with service quality.
+
+                5. **Handset Refurbished**:
+                - Customers who have refurbished handsets show a higher churn probability (probability change of 3.55%). This could indicate dissatisfaction with the quality of refurbished handsets or a perception of lower value compared to new devices.
+
+                6. **Made Call to Retention Team**:
+                - Customers who have contacted the retention team have a significantly higher churn probability (probability change of 10.18%). This indicates that these customers were likely already dissatisfied and seeking solutions before ultimately deciding to churn.
 
                 Below is the customer details:
                 {customer}

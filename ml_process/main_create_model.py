@@ -48,6 +48,16 @@ analyzer=shap_summary.ShapAnalyzer(model=model,
 ##Save the local SHAP explanation for X_test and X_train
 print("Getting Local SHAP explanation saved")
 explainer=analyzer.get_explainer()
+base_value = explainer.expected_value
+
+print(f"Base Value (Expected Value): {base_value}")
+with open(conf['model']['shap_base_value'], "w") as file:
+    file.write(f"{base_value}\n")
+
+##Save the shap explainer
+with open(conf['model']['shapexplainer_model_location'], 'wb') as f:
+    pickle.dump(explainer, f)
+
 
 shap_train=pd.DataFrame(explainer.shap_values(xgb.DMatrix(X_train[model.feature_names], enable_categorical=True)),columns=model.feature_names)
 shap_train[id_features]=X_train[id_features]
