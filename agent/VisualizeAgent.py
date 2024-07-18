@@ -1,3 +1,5 @@
+#Copyright 2024 Google LLC
+#This agent was modified and built from the agent built by Google LLC in 2024
 #This agent generates google charts code for displaying charts on web application
 #Generates two charts with elements "chart-div" and "chart-div-1"
 #Code is in javascript
@@ -7,7 +9,8 @@ from vertexai.language_models import CodeChatModel
 from vertexai.generative_models import GenerativeModel,HarmCategory,HarmBlockThreshold
 from .core import Agent 
 import pandas as pd
-import json  
+import json
+import yaml  
 
 
 class VisualizeAgent(Agent, ABC):
@@ -66,7 +69,7 @@ class VisualizeAgent(Agent, ABC):
 
     def getChartType(self,user_question, generated_sql):
         map_prompt=f'''
-        You are expert in generated visualizations.
+        You are expert in generating visualizations.
 
         Some commonly used charts and when do use them:
 
@@ -101,21 +104,45 @@ class VisualizeAgent(Agent, ABC):
 
         Examples:
 
-        Question: What are top 5 product skus that are ordered?
-        SQL: SELECT  productSKU as ProductSKUCode, sum(total_ordered) as TotalOrderedItems
-        FROM `inbq1-joonix.demo.sales_sku` group by productSKU order by sum(total_ordered) desc limit 5
+        Question: What is the average monthly revenue and churn rate for each service city??
+        SQL: SELECT service_city,AVG(monthlyrevenue) AS avg_monthly_revenue,AVG(churn) AS churn_rate FROM `mlchatagent-429005.telecom_churn.customer_data`
+            GROUP BY service_city;
         Answer: Bar Chart, Table Chart 
 
-        Question: Which city had maximum number of sales?
-        SQL: select st.city_id from retail.sales as s join retail.stores as st on s.id_store = st.id_store group by st.city_id order by count(*) desc limit 1;
+        Question: Create 10 buckets for current equipment age. Provide a plot of equipment age buckets and average churn rate?
+        SQL: WITH data AS (
+                            SELECT 
+                                currentequipmentdays,
+                                churn,
+                                NTILE(10) OVER (ORDER BY currentequipmentdays) AS current_equipment_age_bucket,
+                            FROM 
+                                `mlchatagent-429005.telecom_churn.customer_data`
+                            ),
+                            buckets AS (
+                            SELECT 
+                                SAFE_CAST(current_equipment_age_bucket AS BIGNUMERIC) AS current_equipment_age_bucket,
+                                SAFE_CAST(MIN(currentequipmentdays) OVER (PARTITION BY current_equipment_age_bucket) AS BIGNUMERIC) AS current_equipment_age_bucket_min,
+                                SAFE_CAST(MAX(currentequipmentdays) OVER (PARTITION BY current_equipment_age_bucket) AS BIGNUMERIC) AS current_equipment_age_bucket_max,
+                            churn
+                            FROM 
+                                data
+                            )
+                            SELECT 
+                            current_equipment_age_bucket,
+                            current_equipment_age_bucket_min,
+                            current_equipment_age_bucket_max,
+                            avg(churn) as avg_churn
+                            FROM 
+                            buckets
+                            GROUP BY 
+                            current_equipment_age_bucket,
+                            current_equipment_age_bucket_min,
+                            current_equipment_age_bucket_max;
+
         Answer: Table Chart, Bar Chart
 
-        Question: Which products was sold most number of times?
-        SQL: select\n  p.id_product,\n  count(p.id_product) as product_sales_count\nfrom\n  retail.sales as s\n  join retail.products as p on s.id_product = p.id_product\ngroup by\n  p.id_product\norder by\n  product_sales_count desc\nlimit\n  5;
-        Answer: Bar Chart, Table Chart
-
-        Question: Please provide a plot of distribution of customers across different credit grouo 
-        SQL:  SELECT creditrating, COUNT(*) AS count FROM eco-sector-422622-b5.telecom_churn.customer_data GROUP BY 1
+        Question: Please provide a plot of distribution of customers across different credit group 
+        SQL:  SELECT creditrating, COUNT(*) AS count FROM mlchatagent-429005.telecom_churn.customer_data GROUP BY 1
         Answer: Pie Chart, Bar Chart
 
         Guidelines:

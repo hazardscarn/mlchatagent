@@ -1,3 +1,8 @@
+#Copyright 2024 Google LLC
+#This agent was modified and built from the agent logic built by Google LLC in 2024
+#Licensed under the Apache License, Version 2.0 (the "License");
+
+
 from abc import ABC
 import vertexai
 from vertexai.language_models import TextGenerationModel
@@ -23,6 +28,7 @@ with open('./llm_configs.yml') as file:
 
 ##Load the Base Agent Structure
 ##This will act as base class for all the agents
+
 class Agent(ABC):
     """
     The core class for all Agents
@@ -308,38 +314,14 @@ class ValidateSQLAgent(Agent, ABC):
     def check(self, user_question, tables_schema, columns_schema, generated_sql):
 
         context_prompt = f"""
-
             Classify the SQL query: {generated_sql} as valid or invalid?
-
-            Your job is to only check syntactic and semantic validity of the SQL query
-            i.e to make sure the query is able to answer the user question in whole.
-
-            Guidelines to be valid:
-            - **DO NOT add entire schema with column names in the query. Use ONLY column names (e.g. select a.column from `project_id.owner.table_name` a)**
-            - **When using column values to subset make sure the case matches. it is case sensitive and is lowercase**
-            - Make sure the generated sql is able to answer the user question in whole. 
-                For example if the question is to get churn impact analysis for a subset of customers,the query should return all the columns (select *) needed to perform the analysis.
-            - If possible use subqueries to reduce the complexity of the query.
-            - In case when all columns have to be returned, use * instead of column names.
-            - If query returned some columns and not all, but user question is asking for all columns, then the query is invalid.
-            - all join columns must be the same data_type.
-            - Use table_alias.column_name when referring to columns. Example: dept_id=hr.dept_id
-            - Capitalize the table names on SQL "where" condition.
-            - Use the columns from the "SELECT" statement while framing "GROUP BY" block.
-            - Always the table should be refered as schema.table_name.
-            - Use all the non-aggregated columns from the "SELECT" statement while framing "GROUP BY" block.
-            - Use counterfactual table only for individual customer recommendations and actions.
-            - Never use counterfactuals for churn reasoning for a subset. Doing so will result in fat errors
-
-
-        **NOTE:  
-        - It is allowed when query is attempting to create a new column which already exists in the table. DO NOT consider this as an error.BIGQUERY will add new columns with _1,_2 etc.
-
+            """
+        context_prompt = context_prompt + conf['validate_sql']['prompt']
+        context_prompt=context_prompt+f"""  
         Parameters:
         - SQL query: {generated_sql}
         - table schema: {tables_schema}
         - column description: {columns_schema}
-
 
         Respond using a valid JSON format with two elements valid and errors. Remove ```json and ``` from the output:
         {{ "valid": true or false, "errors":errors }}
@@ -348,7 +330,6 @@ class ValidateSQLAgent(Agent, ABC):
         {user_question}
 
         """        
-
         if self.model_id =='gemini-1.5-flash-001' or self.model_id == 'gemini-1.0-pro':
             context_query = self.model.generate_content(context_prompt, stream=False)
             generated_sql = str(context_query.candidates[0].text)
@@ -357,69 +338,10 @@ class ValidateSQLAgent(Agent, ABC):
             context_query = self.model.predict(context_prompt, max_output_tokens = 8000, temperature=0)
             generated_sql = str(context_query.candidates[0])
 
-
         json_syntax_result = json.loads(str(generated_sql).replace("```json","").replace("```",""))
-
-        # print('\n SQL Syntax Validity:' + str(json_syntax_result['valid']))
-        # print('\n SQL Syntax Error Description:' +str(json_syntax_result['errors']) + '\n')
         
         return json_syntax_result
     
-
-class ResponseAgent(Agent, ABC): 
-    """
-    A specialized Chat Agent designed to provide natural language responses to user questions based on SQL query results.
-
-    This agent acts as a bridge between structured data returned from SQL queries and the user's natural language input. It leverages a language model (e.g., Gemini Pro or others) to interpret the query results and craft informative, human-readable answers.
-
-    Key Features:
-
-    * **Natural Language Generation:**  Transforms SQL results into user-friendly responses.
-    * **Model Flexibility:** Supports multiple language models (currently handles Gemini Pro and others with slight adjustments).
-    * **Contextual Understanding:**  Incorporates the user's original question and the SQL results to provide accurate and relevant answers. 
-
-    Attributes:
-        agentType (str): Identifies this agent as a "ResponseAgent".
-        model_id (str): Indicates the specific language model being used.
-
-    Methods:
-        run(user_question, sql_result):
-            Generates a natural language response based on the user's question and the SQL results.
-            
-    Example:
-
-        response_agent = ResponseAgent(model_id='gemini-1.0-pro')
-        response = response_agent.run("How many customers are in California?", sql_result) 
-        # response might be: "There are 153 customers in California based on the data."
-    """
-
-    agentType: str = "ResponseAgent"
-
-    # TODO: Make the LLM Validator optional
-    def run(self, user_question, sql_result):
-
-        context_prompt = f"""
-
-            You are a Data Assistant that helps to answer users' questions on their data within their databases.
-            The user has provided the following question in natural language: "{str(user_question)}"
-
-            The system has returned the following result after running the SQL query: "{str(sql_result)}".
-
-            Provide a natural sounding response to the user to answer the question with the SQL result provided to you. 
-        """
-
-        
-        if self.model_id =='gemini-1.5-flash-001' or self.model_id == 'gemini-1.0-pro':
-            context_query = self.model.generate_content(context_prompt, stream=False)
-            generated_sql = str(context_query.candidates[0].text)
-
-        else:
-            context_query = self.model.predict(context_prompt, max_output_tokens = 8000, temperature=0)
-            generated_sql = str(context_query.candidates[0])
-        
-        return generated_sql
-
-
 class DebugSQLAgent(Agent, ABC): 
     """ 
     This Chat Agent runs the debugging loop.
@@ -433,63 +355,9 @@ class DebugSQLAgent(Agent, ABC):
 
 
     def init_chat(self, tables_schema,tables_detailed_schema,sql_example="-No examples provided..-"):
-        context_prompt = f"""
-        You are an BigQuery SQL guru. This session is trying to troubleshoot an BigQuery SQL query.  As the user provides versions of the query and the errors returned by BigQuery,
-        return a new alternative SQL query that fixes the errors. It is important that the query still answer the original question.
+        context_prompt = conf['debug_sql']['prompt']
+        context_prompt = context_prompt+f"""
 
-
-        Guidelines:
-        - Join as minimal tables as possible.
-        - When joining tables ensure all join columns are the same data_type.
-        - Analyze the database and the table schema provided as parameters and undestand the relations (column and table relations).
-        - Use always SAFE_CAST. If performing a SAFE_CAST, use only Bigquery supported datatypes.
-        - Always SAFE_CAST and then use aggregate functions
-        - Don't include any comments in code.
-        - Remove ```sql and ``` from the output and generate the SQL in single line.
-        - Tables should be refered to using a fully qualified name with enclosed in ticks (`) e.g. `project_id.owner.table_name`.
-        - Use all the non-aggregated columns from the "SELECT" statement while framing "GROUP BY" block.
-        - Return syntactically and symantically correct SQL for BigQuery with proper relation mapping i.e project_id, owner, table and column relation.
-        - Use ONLY the column names (column_name) mentioned in Table Schema. DO NOT USE any other column names outside of this.
-        - Associate column_name mentioned in Table Schema only to the table_name specified under Table Schema.
-        - Use SQL 'AS' statement to assign a new name temporarily to a table column or even a table wherever needed.
-        - Table names are case sensitive. DO NOT uppercase or lowercase the table names.
-        - Always enclose subqueries and union queries in brackets.
-            - Never limit rows in the query unless specifically asked to do so.
-        - Return all columns (select *) whenever possible except in vizualization/plot tasks.
-        - Unless it's specifically asked to return only certain columns or if it is  vizualization/plot task always use select *
-        - Never use select * for a plot or distribution task. Failure to do this will result in fatal error
-        - It is a fatal mistake not to return all columns when asked to do so.
-        - Make sure filters, if requested are applied to the correct columns and in the correct order.
-        - When you are asked to modify a column, make sure you do it as requested. Failing to do so can result in critical errors.
-        - When modifying or changing a column, ensure you do so within the SELECT clause of the query. Failing to do this can result in critical errors.
-        - When modifying or changing a column,DO NOT rename them. We are just trying to update it's value.Changing the column name can result in critical errors.
-        - NEVER GROUP BY a INT or FLOAT column unless it is specified you can group the column
-        - Never group a query by more than 5 columns. Doing so will create Fatal errors
-        - Always bucket a conitnous variable into 5 or 10 levels and then group by buckets if necessary
-        - **When using column values to subset make sure the case matches. it is case sensitive and is lowercase**
-        - Join as few tables as possible and ensure all join columns have the same data type.
-        - Analyze the database and table schema provided as parameters to understand the relations.
-        - Always use SAFE_CAST and only BigQuery-supported data types.
-        - Use table aliases and reference columns like t1.column without the full path
-        - Do not cast a column of string datatype to integer datatype unless necessary
-        - Do not include any comments in the code.
-        - Generate the SQL in a single line without ` ```sql ` and ` ``` `.
-        - Refer to tables using fully qualified names enclosed in ticks (e.g., `project_id.owner.table_name`).
-        - Use only column names mentioned in the Table Schema. Do not use any other column names.
-        - Associate column names mentioned in the Table Schema only with the specified table_name.
-        - Use the SQL 'AS' statement to assign a new name temporarily to a table column or table wherever needed.
-        - Table names are case-sensitive. Do not change the case of table names.
-        - Enclose subqueries and union queries in brackets.
-        - Use column values in a case-sensitive manner for subsetting.
-        - Create new columns or summaries with appropriate names (e.g., SUM(column) AS total_column, COUNT(column) AS total_count).
-        - Use subqueries for bucketing numeric columns.
-        - Use NTILE and window functions for bucketing and ranking (e.g., NTILE(10) OVER (ORDER BY column_name) AS bucket).
-        - Create meaningful bucket ranges with min and max values for easier interpretation. For example:
-        - First, use a subquery to create buckets using NTILE and include the column for bucketing (e.g., totalrecurringcharge).
-        - Then, create another subquery to calculate the min and max values for each bucket.
-        - Finally, join these subqueries and format the bucket ranges as strings (e.g., CONCAT('$', FORMAT('%f', min_value), ' - $', FORMAT('%f', max_value))).
-        - Use window functions to calculate running totals, averages, and other aggregations.
-        - Use counterfactual table only for individual customer reccomendations.                  
         - Refer to the examples provided i.e. {sql_example}
 
         Parameters:
@@ -636,31 +504,8 @@ class QueryRefiller(Agent, ABC):
 
     def check(self, generated_sql):
 
-        context_prompt = f"""
-        Your task is to check if the SQL query contains "SELECT *" and modify it if necessary:
-        - If the query does not have "SELECT *" or "select alias.*", modify it to include "SELECT *".
-        - If the query already has "SELECT *" or "select alias.*", return the query as is.
-        - Include any modified or new columns in the query.
-        - Ensure the query remains valid SQL.
-
-        Examples:
-
-        Example 1 - When "SELECT *" is missing:
-        Original query: SELECT eco-sector-422622-b5.telecom_churn.customer_shap_data.shapvalue_agehh1, eco-sector-422622-b5.telecom_churn.customer_shap_data.shapvalue_childreninhh FROM eco-sector-422622-b5.telecom_churn.customer_shap_data INNER JOIN eco-sector-422622-b5.telecom_churn.customer_data ON eco-sector-422622-b5.telecom_churn.customer_shap_data.customerid = eco-sector-422622-b5.telecom_churn.customer_data.customerid WHERE eco-sector-422622-b5.telecom_churn.customer_data.agehh1 > 50 AND eco-sector-422622-b5.telecom_churn.customer_data.childreninhh = TRUE
-        Reframed query: SELECT t1.* FROM eco-sector-422622-b5.telecom_churn.customer_shap_data t1 INNER JOIN eco-sector-422622-b5.telecom_churn.customer_data t2 ON t1.customerid = t2.customerid WHERE t2.agehh1 > 50 AND t2.childreninhh = TRUE  
-
-        Example 2 - When "SELECT *" is already there:
-        Original query: SELECT * FROM eco-sector-422622-b5.telecom_churn.customer_data
-        Reframed query: SELECT * FROM eco-sector-422622-b5.telecom_churn.customer_data
-
-        Example 3 - When "SELECT *" is already there along with a modified column:
-        Original query: SELECT *,(revenue_per_minute-0.1) as revenue_per_minute FROM eco-sector-422622-b5.telecom_churn.customer_data
-        Reframed query: SELECT *,(revenue_per_minute-0.1) as revenue_per_minute FROM eco-sector-422622-b5.telecom_churn.customer_data
-
-        Example 4 - When "SELECT alias.*" is already there:
-        Original query: SELECT t1.* FROM mlchatagent-429005.telecom_churn.customer_shap_data t1 JOIN mlchatagent-429005.telecom_churn.customer_data t2 ON t1.customerid = t2.customerid WHERE t2.ageinhh1 < 20
-        Reframed query: SELECT t1.* FROM mlchatagent-429005.telecom_churn.customer_shap_data t1 JOIN mlchatagent-429005.telecom_churn.customer_data t2 ON t1.customerid = t2.customerid WHERE t2.ageinhh1 < 20
-
+        context_prompt = conf['query_filler']['prompt']+f"""
+        
         Here is the SQL generated:
         {generated_sql}
 
@@ -670,7 +515,6 @@ class QueryRefiller(Agent, ABC):
         - Output only the reframed query.
         - Do not add any extra text, SQL keywords, or symbols (e.g., "sql", "```", "output").
         """
-
 
 
         if self.model_id =='gemini-1.5-flash-001' or self.model_id == 'gemini-1.0-pro':

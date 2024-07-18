@@ -1,8 +1,6 @@
-# .streamlit/config.toml
-
 [theme]
-primaryColor = "#d9d9d9"                  # Light grey for primary elements
-backgroundColor = "#f0f0f0"               # Light grey background color
-secondaryBackgroundColor = "#d3d3d3"
-textColor = "#1a1a1a"                     # Dark grey text color for better visibility
+primaryColor = "#1f1f1f"                  # Dark primary color
+backgroundColor = "#0e0e0e"               # Dark background color
+secondaryBackgroundColor = "#262626"      # Dark secondary background color
+textColor = "#ffffff"                     # White text color for better visibility
 font = "sans serif"                       # Font setting (optional)
