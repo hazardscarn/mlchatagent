@@ -35,12 +35,12 @@ To use ML chat Agent in local env:
     ```
 
     **Start the agent**:
-    ```sh
+
     streamlit run .\0_🤖mli.py
-    ```
+
 To use ML chat Agent deployed in cloud run:
 
-    https://ml-chat-app-zye2qkdmta-uc.a.run.app/
+    https://mlychatapp-zye2qkdmta-uc.a.run.app/
 
 ## License
 
