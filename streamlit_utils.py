@@ -1,5 +1,5 @@
 import streamlit as st
-from utils import walkthrough,sample_questions,intro_to_data
+from utils import walkthrough,sample_questions,intro_to_data,banner
 import time
 import yaml
 
@@ -36,10 +36,10 @@ def add_sidebar_elements():
     st.sidebar.markdown("<br>", unsafe_allow_html=True)
     with st.sidebar.expander("Click here to get an Introduction to Data and Model behind the wraps"):
         st.markdown(intro_to_data(model_config))
-
+    st.sidebar.markdown("<br>", unsafe_allow_html=True)
+    st.sidebar.markdown("<br>", unsafe_allow_html=True)
+    banner()
     with st.sidebar:
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown("<br>", unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
