@@ -1,4 +1,9 @@
 data:
+  description: |
+    - I am assisting you with a telecom company's churn dataset and model
+    - The dataset contains information about the customers of a telecom company including demographics, usage,contract and other features
+    - It also contains information about whether the customer has churned or not as well as the predicted probability from churn model
+    - I can help answer any questions you have with dataset, model or help you ask any questions you have directly to the model
   raw_data_path: "data//telecom_churn//cell2celltrain.csv"
   processed_data_path: "data//telecom_churn//processed_data.csv"
   data_dictionary: "data//telecom_churn//data_dictionary.csv"
@@ -23,6 +28,13 @@ data:
     id_features: ['customerid']
     target_majority_class: "Yes"
 model:
+  description: |
+    - The model used is XGBOOST (Extreme Gradient Boosting) classification model trained on the telecom churn dataset. 
+        - It is trained to predict the churn of customers based on the features provided in the dataset.
+        - XGBOOST models are known for their speed and performance.
+    - You can ask more details on model accuracy if needed.    
+    - SHAP explanations are generated to interpret the model's predictions on local and global levels.
+    - Counterfactual explanations are built with DICE models built over base XGBOOST (Extreme Gradient Boosting) model,to provide recommendations to reduce their churn probability of the customers
   features:
     cat_features: ['childreninhh', 'handsetrefurbished', 'handsetwebcapable',
     'truckowner', 'rvowner', 'homeownership', 'buysviamailorder',
@@ -41,6 +53,7 @@ model:
     'adjustmentstocreditrating', 'revenue_per_minute', 'total_calls',
     'avg_call_duration','service_tenure', 'customer_support_interaction','handsetprice','incomegroup']
     target: 'churn'
+    prediction_column: 'prediction'
     id_features: ['customerid']
   params:
     max_depth: 5

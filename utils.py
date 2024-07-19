@@ -1,12 +1,14 @@
 import re
 from google.cloud import secretmanager
 import yaml
+import streamlit as st
 
 # Load configuration files
 with open('llm_configs.yml', 'r') as f:
     llm_config = yaml.load(f, Loader=yaml.FullLoader)
 
-
+with open('conf_telchurn.yml', 'r') as f:
+    model_config = yaml.load(f, Loader=yaml.FullLoader)
 
 def remove_sql_and_backticks(input_text):
     modified_text = re.sub(r'```|sql', '', input_text)
@@ -15,8 +17,9 @@ def remove_sql_and_backticks(input_text):
 
 def normalize_string(s):
     s = s.lower()
-    s = re.sub(r'\s+', ' ', s)  # Replace multiple spaces with a single space
-    s = re.sub(r'[^a-zA-Z0-9\s]', '', s)  # Remove all non-alphanumeric characters except spaces
+    #s = re.sub(r'\s+', ' ', s)  # Replace multiple spaces with a single space
+    s = re.sub(r'[ \t]+', ' ', s)  # Replace multiple spaces with a single space
+    #s = re.sub(r'[^a-zA-Z0-9\s]', '', s)  # Remove all non-alphanumeric characters except spaces
     return s.strip()
 
 
@@ -50,10 +53,12 @@ In this scenario, I'm provided with dataset and ML model of a telecom company. I
 
 Here are some sample questions you can ask me if you are a :-
 
-1. **Retention Manager**:\n
-    a. What are the main reasons for churn for customers with equipment age more than 600 days?\n
-    b. What is the net effect on CLV if we decrease the revenue_per_minute by 10% for customers with churn probability more than 0.5? Assume the cost of treatment is $10 per customer.\n
-    c. What is the average age of customers who have higher churn because of revenue_per_minute?\n
+1. **Retention/Pricing/Marketing Analyst**:\n
+    a. What are the main reasons for churn for customers?\n
+    b. Create buckets for current equipment age with this logic 0-90,91-180,181-365,366-720,720-1000,1000+. Then give me average churn rate and count for these buckets.\n
+    c. What is the net effect on CLV if we change the currentequipment age to 30 for those customers with currentequipment age greater than 900 days? Assume the cost of treatment is $150 per customer.\n
+    e. What is the net effect on CLV if we change the currentequipment age to 30 for those customers with currentequipment age greater than 900 days and have churn prediction more than 0.5? Assume the cost of treatment is $150 per customer
+    f. What is the average age of customers who have higher churn because of revenue_per_minute?\n
 
 2. **Customer Service Rep**:\n
     a. What are the recommendations to reduce churn probability for customer with customer_id 3334558?\n
@@ -62,13 +67,13 @@ Here are some sample questions you can ask me if you are a :-
 3. **Data Analyst**:\n
     a. What are the top 10 customers with highest churn probability?\n
     b. What is the churn probability distribution for customers with revenue_per_minute more than 0.5?\n
-    c. Create a vizualization of churn probability distribution for customers with revenue_per_minute more than 0.5.\n
+    c. Create a vizualization of average churn rate and average predicted churn across different occupation\n
     d. How many customers with children and aged under 50 have current equipment age more than 600 days?\n
 
 4. **Anyone**:\n
     a. What are the stats of the model?\n
     b. What is the AUC and F1 score of the model?\n
-    c. Display the vigintile distribution of model\n
+    c. Display the average churn vs average predicted churn across vigintiles distribution of model with test data\n
 
 These are some sample questions you can ask me. Feel free to ask me anything you want to know irrepsctive of your role.\n
 I am here to help you talk to the ML model in English and get the best informed answers for your questions.\n
@@ -142,12 +147,49 @@ def walkthrough():
 
     ** And many more **
 
+    If you want to have an idea about the data and model, you can ask me for an introduction to the data and model.
+    It might be ideal to familiarize yourself with the data and model before you start asking me questions.
+
         - There are many other ways you can make use of me. But this is a short introduction to what I can do for you.
         - For example you can ask what are the top 10 customers with highest churn probability, I can provide you with the list. 
         - Basically you can consider me as your data scientist assistant who can help you with any data related queries you have.
           I will take your question, ask around (to data, models, tools, internet) and provide you with the answer you are looking for as best as I can.
     """
     return response
+
+
+
+def intro_to_data(model_config):
+    """
+    Generates a summary about what the dataset is,what are the models behind,what are the features available for analysis etc.
+    Returns
+    -------
+    str
+        A summary on what the dataset is, what are the models behind, what are the features available for analysis etc.
+    """
+
+    data_info = model_config['data']['description']
+    model_info = model_config['model']['description']
+    cat_features = model_config['model']['features']['cat_features']
+    num_features = model_config['model']['features']['num_features']
+    target = model_config['model']['features']['target']
+    prediction = model_config['model']['features']['prediction_column']
+
+    response = (
+        f"**Dataset Description:**\n\n"
+        f"{data_info}\n\n"
+        f"**Dataset Features:**\n"
+        f"- **Categorical Features:**\n  - " + "\n  - ".join(cat_features) + "\n"
+        f"- **Numerical Features:**\n  - " + "\n  - ".join(num_features) + "\n"
+        f"- **Target Feature:** {target}\n"
+        f"- **Prediction Feature:** {prediction}\n\n"
+        f"**Model Description:**\n\n"
+        f"{model_info}"
+    )
+
+    return response
+
+
 
 def agent_prompt():
     prompt=llm_config['main_agent']['prompt']

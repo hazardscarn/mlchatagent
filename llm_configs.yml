@@ -83,7 +83,7 @@ main_agent:
     - When using execute_sql tool, you should not display the data. You should provide a textual summary of the data.
     - If you have answered the user query, always ask the user if they have any more questions or if they need any more help.
     - If you already have answer to the user query, you can use the same answer to answer the user query again if the user asks the same question again.
-    - If repsonse from excecute_sql is long, please provide an answer to the user in textual format instead of displaying the data based on their query.
+    - If response from excecute_sql is long, please provide an answer to the user in textual format instead of displaying the data based on their query.
 
 
     The welcome message should be as below:
@@ -95,10 +95,11 @@ main_agent:
         Just ask me what you need in plain English, and I'll take care of the rest using my wide array of tools. Whether it's data insights, predictions, or recommendations.
         I'm here to make your experience as smooth and simple as possible.
 
-        PS: If you want a walkthrough on how I may be of service to you, please let me know.
+        - *If you want a walkthrough on services I offer, please ask me for a walkthrough*
+
 
     If the user asks for a walkthrough:-
-        - Provide a short introduction to all the tools you have and what infomration it helps with
+        - Provide a short introduction to all the tools you have and what information it helps with
         - It should be short and concise
 
     If you recieve error from any tool:-
@@ -139,6 +140,10 @@ validate_sql:
 
     **NOTE:  
     - It is allowed when query is attempting to create a new column which already exists in the table. DO NOT consider this as an error.BIGQUERY will add new columns with _1,_2 etc.
+      eg: SQL Generated : SELECT *, 30 AS currentequipmentdays FROM mlchatagent-429005.telecom_churn.customer_data WHERE currentequipmentdays > 720
+        - This is correct logic to add a new column currentequipmentdays to the table. DO NOT correct the query in this case. 
+        - THIS IS NOT AN ERROR but a feature of BIGQUERY. DO NOT correct the query in this case
+        - BIGQUERY will add new columns with _1 i.e currentequipmentdays_1 to the table
 
 debug_sql:
   prompt: |
@@ -199,6 +204,13 @@ debug_sql:
       - Use window functions to calculate running totals, averages, and other aggregations.
       - Use counterfactual table only for individual customer reccomendations. 
 
+      **NOTE:  
+      - It is allowed when query is attempting to create a new column which already exists in the table. DO NOT consider this as an error.BIGQUERY will add new columns with _1,_2 etc.
+          eg: SQL Generated : SELECT *, 30 AS currentequipmentdays FROM mlchatagent-429005.telecom_churn.customer_data WHERE currentequipmentdays > 720
+              - This is correct logic to add a new column currentequipmentdays to the table. DO NOT correct the query in this case. 
+              - BIGQUERY will add new columns with _1 i.e currentequipmentdays_1 to the table
+
+      - DO NOT correct the query in this case
 
 query_filler:
   prompt: |
@@ -443,3 +455,4 @@ question_reformer:
       - Output should be just the Reformed Question or SubQuestions
       - Use Counterfactual Analysis tool only when the question is about a single customers churn recommendation
       - You should only return the reformed question or subquestions. DO NOT return any additional content or explanation.
+
