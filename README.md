@@ -36,7 +36,7 @@ To use ML chat Agent in local env:
 
     **Start the agent**:
 
-    streamlit run .\0_🤖mli.py
+    streamlit run .\0🤖mlchatbot.py
 
 To use ML chat Agent deployed in cloud run:
 
