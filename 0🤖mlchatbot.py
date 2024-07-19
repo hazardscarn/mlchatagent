@@ -18,7 +18,7 @@ st.set_page_config(
 )
 
 
-from utils import walkthrough,access_secret_version,sample_questions,normalize_string,remove_sql_and_backticks,agent_prompt
+from utils import walkthrough,access_secret_version,sample_questions,normalize_string,remove_sql_and_backticks,agent_prompt,intro_to_data
 from toolbox import generate_sql,execute_sql,subset_churn_contribution_analysis
 from toolbox import subset_clv_analysis,generate_visualizations,subset_shap_summary,question_reformer,customer_recommendations,model_stat
 from streamlit_utils import add_sidebar_elements,display_chat_history,handle_user_input

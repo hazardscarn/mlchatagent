@@ -1,7 +1,11 @@
 import streamlit as st
-from utils import walkthrough,sample_questions
+from utils import walkthrough,sample_questions,intro_to_data
 import time
+import yaml
 
+
+with open('conf_telchurn.yml', 'r') as f:
+    model_config = yaml.load(f, Loader=yaml.FullLoader)
 
 # Function to map roles to Streamlit roles
 def role_to_streamlit(role):
@@ -29,6 +33,9 @@ def add_sidebar_elements():
     st.sidebar.markdown("<br>", unsafe_allow_html=True)
     with st.sidebar.expander("Click here to see some sample questions I can help you with"):
         st.markdown(sample_questions())
+    st.sidebar.markdown("<br>", unsafe_allow_html=True)
+    with st.sidebar.expander("Click here to get an Introduction to Data and Model behind the wraps"):
+        st.markdown(intro_to_data(model_config))
 
     with st.sidebar:
         st.markdown("<br>", unsafe_allow_html=True)

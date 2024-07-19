@@ -60,9 +60,9 @@ class ModelScorer:
         with open(self.model_config['model']['train_category_levels'], 'r') as f:
             self.train_categories = json.load(f)
 
-    def replace_columns_with_suffix(self, df: pd.DataFrame, suffix: str = '_1') -> pd.DataFrame:
+    def replace_columns_with_suffix_or_prefix(self, df: pd.DataFrame, suffix: str = '_1', prefix: str = 'new_') -> pd.DataFrame:
         """
-        Replaces columns in the DataFrame that have a matching column with the same name before the suffix.
+        Replaces columns in the DataFrame that have a matching column with the same name before the suffix or after the prefix.
 
         Parameters
         ----------
@@ -70,6 +70,8 @@ class ModelScorer:
             The input DataFrame.
         suffix : str, optional
             The suffix to look for in column names (default is '_1').
+        prefix : str, optional
+            The prefix to look for in column names (default is 'new_').
 
         Returns
         -------
@@ -77,15 +79,21 @@ class ModelScorer:
             The modified DataFrame with columns replaced.
         """
         suffixed_columns = [col for col in df.columns if col.endswith(suffix)]
-        if not suffixed_columns:
-            # If no suffixed columns are found, return the original DataFrame
+        prefixed_columns = [col for col in df.columns if col.startswith(prefix)]
+        if not suffixed_columns and not prefixed_columns:
+            # If no suffixed or prefixed columns are found, return the original DataFrame
             return df
         for col in suffixed_columns:
             original_col = col[:-len(suffix)]
             if original_col in df.columns:
                 df[original_col] = df[col]
-        df.drop(columns=suffixed_columns, inplace=True)
+        for col in prefixed_columns:
+            original_col = col[len(prefix):]
+            if original_col in df.columns:
+                df[original_col] = df[col]
+        df.drop(columns=suffixed_columns + prefixed_columns, inplace=True)
         return df
+
 
     def convert_bools_to_yes_no(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -138,7 +146,7 @@ class ModelScorer:
         pd.DataFrame
             The DataFrame with predictions.
         """
-        df2 = self.replace_columns_with_suffix(df)
+        df2 = self.replace_columns_with_suffix_or_prefix(df)
         df2 = self.convert_bools_to_yes_no(df2)
         for col in self.cat_cols:
             df2[col] = (df2[col]

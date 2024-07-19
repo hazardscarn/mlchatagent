@@ -11,7 +11,8 @@ def display_intermediate_results(intermediate_results):
 
         st.markdown("<br>", unsafe_allow_html=True)
         for user_question, results in intermediate_results.items():
-            with st.expander(f"Question: {user_question}"):
+            formatted_question = user_question.replace("\n", "<br>")
+            with st.expander(f"Question: {formatted_question}", expanded=False):
                 for result in results:
                     st.markdown("<br>", unsafe_allow_html=True)
                     st.markdown(f"**Tool Used: {result['tool']}**")

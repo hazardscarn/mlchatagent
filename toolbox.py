@@ -762,4 +762,3 @@ def customer_recommendations(user_question:str, customer_data_query:str,counterf
         return response
     except Exception as e:
         return str(e)
-
