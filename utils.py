@@ -55,10 +55,10 @@ Here are some sample questions you can ask me if you are a :-
 
 1. **Retention/Pricing/Marketing Analyst**:\n
     a. What are the main reasons for churn for customers?\n
-    b. Create buckets for current equipment age with this logic 0-90,91-180,181-365,366-720,720-1000,1000+. Then give me average churn rate and count for these buckets.\n
+    b. Create buckets for current equipment age with this ranges 0-90,91-180,181-365,366-720,720-1000,1000+ as buckets. Then give me average churn rate and count across these buckets.\n
     c. What is the net effect on CLV if we change the currentequipment age to 30 for those customers with currentequipment age greater than 900 days? Assume the cost of treatment is $150 per customer.\n
-    e. What is the net effect on CLV if we change the currentequipment age to 30 for those customers with currentequipment age greater than 900 days and have churn prediction more than 0.5? Assume the cost of treatment is $150 per customer
-    f. What is the average age of customers who have higher churn because of revenue_per_minute?\n
+    e. What is the net effect on CLV if we change the currentequipment age to 30 for those customers with currentequipment age greater than 900 days and have churn prediction more than 0.5? Assume the cost of treatment is $150 per customer\n
+    f. Create age buckets as 0-18,19-30,31-50,41-70,70+. The calculate count of customers who have higher churn because of revenue_per_minute?\n
 
 2. **Customer Service Rep**:\n
     a. What are the recommendations to reduce churn probability for customer with customer_id 3334558?\n
@@ -73,7 +73,6 @@ Here are some sample questions you can ask me if you are a :-
 4. **Anyone**:\n
     a. What are the stats of the model?\n
     b. What is the AUC and F1 score of the model?\n
-    c. Display the average churn vs average predicted churn across vigintiles distribution of model with test data\n
 
 These are some sample questions you can ask me. Feel free to ask me anything you want to know irrepsctive of your role.\n
 I am here to help you talk to the ML model in English and get the best informed answers for your questions.\n
@@ -189,6 +188,36 @@ def intro_to_data(model_config):
 
     return response
 
+
+def banner():
+    # Custom CSS for styling the sidebar message
+    st.markdown(
+        """
+        <style>
+        .custom-sidebar .custom-sidebar-content {
+            background-color: #444444; /* Slightly lighter grey */
+            padding: 15px;
+            border-radius: 5px;
+            color: white;
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
+    # Sidebar message
+    st.sidebar.markdown(
+        """
+        <div class="custom-sidebar">
+            <div class="custom-sidebar-content">
+                If you want to access data, plots, or intermediate steps from previous questions, please visit the  <strong>Reference</strong>  page from the top left.
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
 
 def agent_prompt():
